@@ -1,0 +1,6 @@
+<RCC>
+  <qresource prefix="MovieRenderer">
+    <file>application.svg</file>
+	<file>application.ico</file>
+  </qresource>
+</RCC>
