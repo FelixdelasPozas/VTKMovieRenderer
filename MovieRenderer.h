@@ -25,6 +25,7 @@
 
 #include <QMainWindow>
 #include "ui_MovieRenderer.h"
+#include <QProcess>
 
 #include <vtkSmartPointer.h>
 #include <vtkPolyData.h>
@@ -45,10 +46,10 @@ class MovieRenderer
     Q_OBJECT
   public:
     explicit MovieRenderer();
-    virtual ~MovieRenderer();
+    virtual ~MovieRenderer()
+    {}
 
   protected:
-    virtual void showEvent(QShowEvent *);
     virtual bool eventFilter(QObject *, QEvent *);
 
   private slots:
@@ -64,10 +65,14 @@ class MovieRenderer
     void onScriptFinished();
     void onAxesValueChanged(int);
 
+    void onDataAvailable();
+    void onProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
+
   private:
     void updateRendererSettings();
     void startRender();
     void stopRender();
+    void makeMovie();
 
     void modifyUI(bool);
     void renderScript();

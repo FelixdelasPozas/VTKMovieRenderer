@@ -40,6 +40,8 @@
 #include <QMouseEvent>
 #include <QObject>
 #include <QEvent>
+#include <QTimer>
+#include <QDebug>
 
 //--------------------------------------------------------------------
 MovieRenderer::MovieRenderer()
@@ -49,9 +51,7 @@ MovieRenderer::MovieRenderer()
 {
   setupUi(this);
 
-  statusBar()->insertPermanentWidget(0, m_progressBar);
-  statusBar()->showMessage("Initializing");
-
+  // just to avoid entering the same information over and over while testing, feel free to put your own or remove both lines.
   m_directory->setText("D:\\Descargas\\Render");
   m_ffmpegExe->setText("D:\\Program Files\\ffmpeg-20150928-git-235381e-win64-static\\bin\\ffmpeg.exe");
 
@@ -59,13 +59,11 @@ MovieRenderer::MovieRenderer()
 
   setupVTKView();
   updateRendererSettings();
+  m_render->setEnabled(false);
 
   showMaximized();
-}
 
-//--------------------------------------------------------------------
-MovieRenderer::~MovieRenderer()
-{
+  QTimer::singleShot(100, this, SLOT(onReloadPressed()));
 }
 
 //--------------------------------------------------------------------
@@ -108,6 +106,8 @@ void MovieRenderer::onRenderPressed()
 //--------------------------------------------------------------------
 void MovieRenderer::stopRender()
 {
+  statusBar()->showMessage(tr("Rendering cancelled."));
+
   m_frameNum = 0;
   m_executor->abort();
   modifyUI(true);
@@ -116,6 +116,8 @@ void MovieRenderer::stopRender()
 //--------------------------------------------------------------------
 void MovieRenderer::startRender()
 {
+  statusBar()->showMessage(tr("Start rendering frames."));
+
   m_frameNum = 0;
   modifyUI(false);
 
@@ -168,14 +170,6 @@ void MovieRenderer::connectSignals()
 }
 
 //--------------------------------------------------------------------
-void MovieRenderer::showEvent(QShowEvent*)
-{
-  statusBar()->showMessage("Launching resources loader");
-
-  onReloadPressed();
-}
-
-//--------------------------------------------------------------------
 void MovieRenderer::onResourcesLoaded()
 {
   auto loader = qobject_cast<ResourceLoaderThread *>(sender());
@@ -189,26 +183,17 @@ void MovieRenderer::onResourcesLoaded()
       return;
     }
 
-    for(auto actor: loader->actors())
-    {
-      m_renderer->AddActor(actor);
-    }
-
-    m_renderer->AddVolume(loader->volume());
-
-    for(auto actor: loader->logos())
-    {
-      m_renderer->AddActor(actor);
-    }
-
     statusBar()->showMessage("Resources loaded");
 
     // prepare script to run
-    m_executor = std::make_shared<ScriptExecutor>(this);
-    m_executor->setData(m_renderer.Get(), loader->actors().first().Get(), loader->volume().Get(), loader->plane().Get(), loader->image().Get(), loader->polyData());
-
+    m_executor = std::make_shared<ScriptExecutor>(m_renderer, loader, this);
     connect(m_executor.get(), SIGNAL(finished()), this, SLOT(onScriptFinished()));
     connect(m_executor.get(), SIGNAL(render()), this, SLOT(onRenderSignaled()));
+
+    if(!m_executor->getError().isEmpty())
+    {
+      errorDialog(tr("Error loading resources."), m_executor->getError());
+    }
   }
   else
   {
@@ -223,6 +208,7 @@ void MovieRenderer::onResourcesLoaded()
   m_renderer->GetActiveCamera()->Zoom(1.3);
   m_renderer->ResetCamera();
 
+  m_render->setEnabled(true);
   m_resetCamera->setEnabled(true);
   m_reloadResources->setEnabled(true);
 
@@ -242,8 +228,10 @@ void MovieRenderer::setupVTKView()
   interactorstyle->AutoAdjustCameraClippingRangeOn();
   interactorstyle->KeyPressActivationOff();
 
-  m_view->GetRenderWindow()->AddRenderer(m_renderer);
-  m_view->GetRenderWindow()->GetInteractor()->SetInteractorStyle(interactorstyle);
+  auto renderWindow = m_view->GetRenderWindow();
+
+  renderWindow->AddRenderer(m_renderer);
+  renderWindow->GetInteractor()->SetInteractorStyle(interactorstyle);
 
   // Color background
   QPalette pal = this->palette();
@@ -256,7 +244,7 @@ void MovieRenderer::setupVTKView()
 
   m_axesWidget = vtkSmartPointer<vtkOrientationMarkerWidget>::New();
   m_axesWidget->SetOrientationMarker(axes);
-  m_axesWidget->SetInteractor(m_renderer->GetRenderWindow()->GetInteractor());
+  m_axesWidget->SetInteractor(renderWindow->GetInteractor());
   m_axesWidget->SetViewport(0.0, 0.0, 0.3, 0.3);
   m_axesWidget->SetEnabled(true);
   m_axesWidget->InteractiveOff();
@@ -346,12 +334,16 @@ void MovieRenderer::errorDialog(const QString &title, const QString& message)
 //--------------------------------------------------------------------
 void MovieRenderer::onRenderSignaled()
 {
-  m_renderer->GetRenderWindow()->Render();
+  if(m_executor->isFinished()) return;
+
+  auto renderWindow = m_view->GetRenderWindow();
+  renderWindow->Render();
   m_view->update();
 
   // Screenshot
   auto windowToImageFilter = vtkSmartPointer<vtkWindowToImageFilter>::New();
-  windowToImageFilter->SetInput(m_renderer->GetRenderWindow());
+  windowToImageFilter->SetInput(renderWindow);
+  windowToImageFilter->SetFixBoundary(true);
   windowToImageFilter->SetMagnification(1);
   windowToImageFilter->SetInputBufferTypeToRGBA();
   windowToImageFilter->Update();
@@ -390,6 +382,8 @@ void MovieRenderer::onRenderSignaled()
     writer->Write();
   }
 
+  statusBar()->showMessage(tr("Wrote frame number %1").arg(QString::number(m_frameNum)));
+
   ++m_frameNum;
 
   m_executor->nextFrame();
@@ -406,6 +400,8 @@ void MovieRenderer::onFFMPEGDirButtonPressed()
 //--------------------------------------------------------------------
 void MovieRenderer::onReloadPressed()
 {
+  statusBar()->showMessage("Cleaning view and launching resources loader");
+
   m_renderer->RemoveAllViewProps();
 
   m_reloadResources->setEnabled(false);
@@ -441,11 +437,10 @@ void MovieRenderer::onCameraResetPressed()
 //--------------------------------------------------------------------
 void MovieRenderer::onScriptFinished()
 {
-  if(m_executor->isFinished())
-  {
-    m_executor->restart();
-    modifyUI(true);
-  }
+  m_executor->restart();
+  makeMovie();
+
+  modifyUI(true);
 }
 
 //--------------------------------------------------------------------
@@ -471,4 +466,91 @@ bool MovieRenderer::eventFilter(QObject *object, QEvent *e)
   }
 
   return QMainWindow::eventFilter(object, e);
+}
+
+//--------------------------------------------------------------------
+void MovieRenderer::makeMovie()
+{
+  QStringList resolutions;
+  if(m_renderFull->isChecked())
+  {
+    resolutions << "1280x720";
+  }
+
+  if(m_renderHalf->isChecked())
+  {
+    resolutions << "640x360";
+  }
+
+  for(auto resolution: resolutions)
+  {
+    statusBar()->showMessage(tr("Creating %1 movie").arg(resolution));
+
+    QProcess ffmpegProcess{this};
+    auto path = QDir::toNativeSeparators(m_directory->text() + "/");
+
+    QStringList arguments;
+    arguments << "-r" << "25";
+    arguments << "-y";
+    arguments << "-s" << resolution;
+    arguments << "-i" << QString("\"%1Frame_HD_%05d.png\"").arg(path);
+    arguments << "-vcodec" << "libx264";
+    arguments << "-crf" << "1";
+    arguments << "-pix_fmt" << "yuv420p";
+    arguments << "-qp" << "0";
+    arguments << "-f" << "mp4";
+    arguments << QString("%1out.mp4").arg(path);
+
+    connect(&ffmpegProcess, SIGNAL(readyReadStandardError()),
+            this,          SLOT(onDataAvailable()));
+    connect(&ffmpegProcess, SIGNAL(readyReadStandardOutput()),
+            this,          SLOT(onDataAvailable()));
+    connect(&ffmpegProcess, SIGNAL(finished(int, QProcess::ExitStatus)),
+            this,          SLOT(onProcessFinished(int, QProcess::ExitStatus)));
+
+    auto command = "\"" + QDir::toNativeSeparators(m_ffmpegExe->text()) + "\" " + arguments.join(" ");
+    std::cout << "executing " << command.toStdString() << std::endl << std::flush;
+
+    ffmpegProcess.start(command);
+    ffmpegProcess.waitForStarted();
+
+    ffmpegProcess.waitForFinished();
+    if(!ffmpegProcess.readAllStandardError().isEmpty())
+    {
+      qDebug() << ffmpegProcess.readAllStandardError();
+      errorDialog(tr("Error creating the %1 HD video").arg(resolution), tr("Read the log for details."));
+    }
+
+    statusBar()->showMessage(tr("Created %1 video.").arg(resolution));
+  }
+}
+
+
+//--------------------------------------------------------------------
+void MovieRenderer::onProcessFinished(int exitCode, QProcess::ExitStatus exitStatus)
+{
+  auto process = dynamic_cast<QProcess *>(sender());
+  if(process)
+  {
+    disconnect(process, SIGNAL(readyReadStandardError()),
+               this,    SLOT(onDataAvailable()));
+    disconnect(process, SIGNAL(readyReadStandardOOutput()),
+               this,    SLOT(onDataAvailable()));
+    disconnect(process, SIGNAL(finished(int, QProcess::ExitStatus)),
+               this,    SLOT(onProcessFinished(int, QProcess::ExitStatus)));
+
+    std::cout << "process finished with exit code " << exitCode << ", qprocess finished " << (exitStatus == QProcess::ExitStatus::NormalExit ? "normal" : "crash") << std::endl << std::flush;
+
+    statusBar()->showMessage(tr("Finished creating a video"));
+  }
+}
+
+//--------------------------------------------------------------------
+void MovieRenderer::onDataAvailable()
+{
+  auto object = dynamic_cast<QProcess *>(sender());
+  if(!object) return;
+
+  auto data = object->readAllStandardError();
+  qDebug() << QString().fromLocal8Bit(data);
 }

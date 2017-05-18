@@ -36,17 +36,17 @@ class vtkPlane;
 class vtkImageData;
 class vtkPolyData;
 
+class ResourceLoaderThread;
+
 class ScriptExecutor
 : public QThread
 {
     Q_OBJECT
   public:
-    explicit ScriptExecutor(QObject *parent = nullptr);
+    explicit ScriptExecutor(vtkSmartPointer<vtkRenderer> renderer, ResourceLoaderThread* loader, QObject *parent = nullptr);
 
     virtual ~ScriptExecutor()
     {}
-
-    void setData(vtkRenderer *renderer, vtkActor *mesh, vtkVolume *volume, vtkPlane *plane, vtkImageData *image, vtkSmartPointer<vtkPolyData> polyData);
 
     const QString getError() const
     { return m_error; }
@@ -67,25 +67,38 @@ class ScriptExecutor
     virtual void run();
 
   private:
-    void rotateScene(const double degrees);
+    /** \brief Renderes a given number of still frames.
+     * \param[in] numFrames number of still frames to render.
+     *
+     */
+    void waitFrames(const unsigned int numFrames);
+
+    void getResources(ResourceLoaderThread *loader);
 
     void error(const QString &message)
     { m_error = message; }
 
     void waitForFrameToRender();
 
-    vtkRenderer *m_renderer;
-    vtkVolume *m_volume;
-    vtkActor *m_mesh;
-    vtkPlane *m_plane;
-    vtkImageData *m_image;
-    vtkSmartPointer<vtkPolyData> m_polyData;
-
     QString m_error;
     bool m_abort;
 
     QMutex m_mutex;
     QWaitCondition m_waitCondition;
+
+    // script commands
+    void threesixtynoscope();
+    void fadeOutVolume();
+    void fadeInVolume();
+    void reslice();
+
+    // data for the script.
+    vtkSmartPointer<vtkRenderer>  m_renderer;
+    vtkSmartPointer<vtkVolume>    m_volume;
+    vtkSmartPointer<vtkActor>     m_mesh;
+    vtkSmartPointer<vtkPlane>     m_plane;
+    vtkSmartPointer<vtkImageData> m_image;
+    vtkSmartPointer<vtkPolyData>  m_polyData;
 };
 
 #endif // SCRIPTEXECUTOR_H_
