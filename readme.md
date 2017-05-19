@@ -30,7 +30,7 @@ The only current option is build from source as binaries are not provided.
 # Screenshots
 Main dialog allows the user to reposition the camera in the view before the rendering process and configure a minimal set of rendering options. 
 
-![maindialog]()
+![maindialog](https://cloud.githubusercontent.com/assets/12167134/26263701/148648a4-3cda-11e7-95d7-61758a62ccde.png)
 
 # Repository information
 
