@@ -38,25 +38,51 @@ class vtkPolyData;
 
 class ResourceLoaderThread;
 
+/** \class ScriptExecutor
+ * \brief Modifies the scene and creates actors if needed for the frame. Signals for a frame creation once finished modifying the scene.
+ * This file needs to be modified as the script is pure C++.
+ *
+ */
 class ScriptExecutor
 : public QThread
 {
     Q_OBJECT
   public:
+    /** \brief ScriptExecutor class constructor.
+     * \param[in] renderer scene vtk renderer.
+     * \param[in] loader resource loader thread.
+     * \param[in] parent raw pointer of the QObject owner of this one.
+     *
+     */
     explicit ScriptExecutor(vtkSmartPointer<vtkRenderer> renderer, ResourceLoaderThread* loader, QObject *parent = nullptr);
 
+    /** \brief ScriptExecutor class virtual destructor.
+     *
+     */
     virtual ~ScriptExecutor()
     {}
 
+    /** \brief Returns the error string.
+     *
+     */
     const QString getError() const
     { return m_error; }
 
+    /** \brief Signals the need to abort the script.
+     *
+     */
     void abort()
     { m_abort = true; }
 
+    /** \brief Wakes up the executor to create the next frame.
+     *
+     */
     void nextFrame()
     { m_waitCondition.wakeOne(); }
 
+    /** \brief Resets the initial data.
+     *
+     */
     void restart()
     { m_abort = false; }
 
@@ -67,27 +93,36 @@ class ScriptExecutor
     virtual void run();
 
   private:
-    /** \brief Renderes a given number of still frames.
+    /** \brief Helper method to render a given number of still frames.
      * \param[in] numFrames number of still frames to render.
      *
      */
     void waitFrames(const unsigned int numFrames);
 
+    /** \brief Helper method to get the resources from the resource loader thread.
+     *
+     */
     void getResources(ResourceLoaderThread *loader);
 
+    /** \brief Modifies the error string.
+     * \param[in] message error message.
+     *
+     */
     void error(const QString &message)
     { m_error = message; }
 
+    /** \brief Signals the need to save the current frame and stops the execution until 'nextFrame()' method is called by the main application.
+     *
+     */
     void waitForFrameToRender();
 
-    QString m_error;
-    bool m_abort;
-
-    QMutex m_mutex;
-    QWaitCondition m_waitCondition;
+    QString        m_error;         /** error mesasge or empty if everything is good.   */
+    bool           m_abort;         /** true to abort the current render.               */
+    QMutex         m_mutex;         /** mutex for the wait condition.                   */
+    QWaitCondition m_waitCondition; /** wait condition for waiting for the main thread. */
 
     // script commands
-    void threesixtynoscope();
+    void threesixtynoscope(); // never got to make one in Counter Strike...
     void fadeOutVolume();
     void fadeInVolume();
     void reslice();

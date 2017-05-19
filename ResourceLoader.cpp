@@ -26,6 +26,10 @@
 #include <QIcon>
 #include <QMessageBox>
 
+#include <vtkActor2D.h>
+#include <vtkVolume.h>
+#include <vtkPlane.h>
+#include <vtkImageData.h>
 #include <vtkOBJReader.h>
 #include <vtkAppendPolyData.h>
 #include <vtkCleanPolyData.h>
@@ -48,22 +52,15 @@
 #include <vtkMatrix4x4.h>
 
 //--------------------------------------------------------------------
-ResourceLoaderThread::ResourceLoaderThread(QObject* parent)
-: QThread{parent}
-{
-}
-
-//--------------------------------------------------------------------
 void ResourceLoaderThread::run()
 {
+  // resources filenames.
   auto currentDir = QCoreApplication::applicationDirPath() + "/resources/";
   auto rh_mesh_filename = currentDir + "rhmesh.obj";
   auto lh_mesh_filename = currentDir + "lhmesh.obj";
-  auto image_filename   = currentDir + "new_avg100_8b corrected.mhd";
-  auto logocajal        = currentDir + "logocajalbbp.png";
-  auto logocien         = currentDir + "logocien.png";
-  auto logoreina        = currentDir + "logofundacionsofia.png";
-  auto logovallecas     = currentDir + "logovallecas.png";
+  auto image_filename   = currentDir + "new_avg100_8b corrected-1.mhd";
+  auto logosofia        = currentDir + "FRS_M_ISCIII_FCIEN2.tif";
+  auto logocajal        = currentDir + "cajalbbp.png";
 
   // MESH LOADING & ACTOR CREATION
   QFileInfo rhMeshFile{rh_mesh_filename};
@@ -122,9 +119,11 @@ void ResourceLoaderThread::run()
   normalsGenerator->SetNonManifoldTraversal(1);
   normalsGenerator->Update();
 
-  m_polyData = vtkSmartPointer<vtkPolyData>::New();
-  m_polyData->DeepCopy(normalsGenerator->GetOutput());
-  m_polyData->Modified();
+  auto polyData = vtkSmartPointer<vtkPolyData>::New();
+  polyData->DeepCopy(normalsGenerator->GetOutput());
+  polyData->Modified();
+
+  m_polyDatas << polyData;
 
   double bounds[6];
   normalsGenerator->GetOutput()->GetBounds(bounds);
@@ -169,13 +168,15 @@ void ResourceLoaderThread::run()
   imageReader->SetFileName(QDir::toNativeSeparators(imageFile.absoluteFilePath()).toStdString().c_str());
   imageReader->Update();
 
-  m_image = vtkSmartPointer<vtkImageData>::New();
-  m_image->DeepCopy(imageReader->GetOutput());
-  m_image->SetSpacing(0.2, 0.2, 2.0);
+  auto image = vtkSmartPointer<vtkImageData>::New();
+  image->DeepCopy(imageReader->GetOutput());
+  image->SetSpacing(0.2, 0.2, 0.2);
+
+  m_images << image;
 
   auto volumeMapper = vtkSmartPointer<vtkSmartVolumeMapper>::New();
   volumeMapper->SetBlendModeToMaximumIntensity();
-  volumeMapper->SetInputData(m_image);
+  volumeMapper->SetInputData(image);
 
   auto volumeProperty = vtkSmartPointer<vtkVolumeProperty>::New();
   volumeProperty->ShadeOff();
@@ -198,9 +199,11 @@ void ResourceLoaderThread::run()
 
   volumeProperty->SetColor(color);
 
-  m_volume = vtkSmartPointer<vtkVolume>::New();
-  m_volume->SetMapper(volumeMapper);
-  m_volume->SetProperty(volumeProperty);
+  auto volume = vtkSmartPointer<vtkVolume>::New();
+  volume->SetMapper(volumeMapper);
+  volume->SetProperty(volumeProperty);
+
+  m_volumes << volume;
 
   // ACTORS REPOSITION (centers are in 0,0,0 for an easier rotation).
   double center[3], position[3];
@@ -212,18 +215,18 @@ void ResourceLoaderThread::run()
   actor->GetPosition(position);
   actor->SetPosition(position[0]-center[0], position[1]-center[1], position[2]-center[2]);
 
-  m_volume->GetBounds(bounds);
+  volume->GetBounds(bounds);
   center[0] = (bounds[0]+bounds[1])/2.0;
   center[1] = (bounds[2]+bounds[3])/2.0;
   center[2] = (bounds[4]+bounds[5])/2.0;
-  m_volume->SetOrigin(center[0],center[1],center[2]);
-  m_volume->GetPosition(position);
-  m_volume->SetPosition(position[0]-center[0], position[1]-center[1], position[2]-center[2]);
+  volume->SetOrigin(center[0],center[1],center[2]);
+  volume->GetPosition(position);
+  volume->SetPosition(position[0]-center[0], position[1]-center[1], position[2]-center[2]);
 
   // LOGOS LOADING & ACTOR CREATION
-  QStringList logos{logocajal, logoreina, logocien, logovallecas};
-  int xPos = 301; // precomputed to obtain logos centered in Y coord.
-  for(auto logo: logos)
+  QStringList logopics{logosofia, logocajal};
+  int xPos = 0; // precomputed value, modify SetPosition() line to reposition the logos.
+  for(auto logo: logopics)
   {
     QFileInfo logoImageFile{logo};
     if(!logoImageFile.exists())
@@ -232,14 +235,29 @@ void ResourceLoaderThread::run()
       return;
     }
 
-    auto reader = vtkSmartPointer<vtkPNGReader>::New();
-    reader->SetFileName(logo.toStdString().c_str());
-    reader->Update();
+    auto image = vtkSmartPointer<vtkImageData>::New();
+    if(logoImageFile.suffix() == "tif")
+    {
+      auto reader = vtkSmartPointer<vtkTIFFReader>::New();
+      reader->SetFileName(logo.toStdString().c_str());
+      reader->Update();
 
-    auto width = reader->GetOutput()->GetExtent()[1];
+      image->DeepCopy(reader->GetOutput());
+    }
+
+    if(logoImageFile.suffix() == "png")
+    {
+      auto reader = vtkSmartPointer<vtkPNGReader>::New();
+      reader->SetFileName(logo.toStdString().c_str());
+      reader->Update();
+
+      image->DeepCopy(reader->GetOutput());
+    }
+
+    auto width = image->GetExtent()[1];
 
     auto imageMapper = vtkSmartPointer<vtkImageMapper>::New();
-    imageMapper->SetInputData(reader->GetOutput());
+    imageMapper->SetInputData(image);
     imageMapper->SetColorWindow(255);
     imageMapper->SetColorLevel(127.5);
 

@@ -17,16 +17,23 @@
  along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+// Project
 #include "MovieRenderer.h"
 
+// Qt
 #include <QDir>
 #include <QFileDialog>
 #include <QMessageBox>
+#include <QMouseEvent>
+#include <QObject>
+#include <QEvent>
+#include <QTimer>
+#include <QDebug>
 
+// VTK
 #include <vtkInteractorStyleTrackballCamera.h>
 #include <vtkRenderWindow.h>
 #include <vtkRenderWindowInteractor.h>
-#include <vtkActor.h>
 #include <vtkCamera.h>
 #include <vtkWindowToImageFilter.h>
 #include <vtkImageSincInterpolator.h>
@@ -35,13 +42,10 @@
 #include <QVTKWidget.h>
 #include <vtkAxesActor.h>
 #include <vtkOrientationMarkerWidget.h>
-#include <vtkPolyDataNormals.h>
 
-#include <QMouseEvent>
-#include <QObject>
-#include <QEvent>
-#include <QTimer>
-#include <QDebug>
+// C++
+#include <chrono>
+#include <thread>
 
 //--------------------------------------------------------------------
 MovieRenderer::MovieRenderer()
@@ -197,7 +201,7 @@ void MovieRenderer::onResourcesLoaded()
   }
   else
   {
-    std::cout << "error loading resources" << std::endl << std::flush;
+    errorDialog(tr("Error loading resources."), tr("Invalid sender pointer."));
   }
 
   onCameraResetPressed();
@@ -338,7 +342,6 @@ void MovieRenderer::onRenderSignaled()
 
   auto renderWindow = m_view->GetRenderWindow();
   renderWindow->Render();
-  m_view->update();
 
   // Screenshot
   auto windowToImageFilter = vtkSmartPointer<vtkWindowToImageFilter>::New();
@@ -446,6 +449,11 @@ void MovieRenderer::onScriptFinished()
 //--------------------------------------------------------------------
 bool MovieRenderer::eventFilter(QObject *object, QEvent *e)
 {
+  if(m_render->text() == "Stop")
+  {
+    // If rendering frames just swallow the event and do nothing to avoid interruption any camera animation.
+    return true;
+  }
 
   if(m_axesWidget->GetEnabled() && m_view == dynamic_cast<QVTKWidget *>(object))
   {
@@ -457,7 +465,19 @@ bool MovieRenderer::eventFilter(QObject *object, QEvent *e)
         if(m_renderer)
         {
           double fp[3], pos[3];
-          std::cout << "camera position\nposition: " << pos[0] << "," << pos[1] << "," << pos[2] << "\nfocal point: " << fp[0] << "," << fp[1] << "," << fp[2] << std::endl << std::flush;
+
+          // If we need to store a camera position just dump the information.
+          auto camera = m_renderer->GetActiveCamera();
+          camera->GetPosition(pos);
+          camera->GetFocalPoint(fp);
+          auto dist = camera->GetDistance();
+          auto roll = camera->GetRoll();
+
+          std::cout << "camera position ------" << std::endl;
+          std::cout << "position: " << pos[0] << "," << pos[1] << "," << pos[2] << std::endl;
+          std::cout << "focal point: " << fp[0] << "," << fp[1] << "," << fp[2] << std::endl;
+          std::cout << "distance: " << dist << std::endl;
+          std::cout << "roll: " << roll << std::endl;
         }
       }
     }
@@ -490,7 +510,7 @@ void MovieRenderer::makeMovie()
     auto path = QDir::toNativeSeparators(m_directory->text() + "/");
 
     QStringList arguments;
-    arguments << "-r" << "25";
+    arguments << "-r" << "30";
     arguments << "-y";
     arguments << "-s" << resolution;
     arguments << "-i" << QString("\"%1Frame_HD_%05d.png\"").arg(path);
@@ -509,7 +529,6 @@ void MovieRenderer::makeMovie()
             this,          SLOT(onProcessFinished(int, QProcess::ExitStatus)));
 
     auto command = "\"" + QDir::toNativeSeparators(m_ffmpegExe->text()) + "\" " + arguments.join(" ");
-    std::cout << "executing " << command.toStdString() << std::endl << std::flush;
 
     ffmpegProcess.start(command);
     ffmpegProcess.waitForStarted();
@@ -532,15 +551,6 @@ void MovieRenderer::onProcessFinished(int exitCode, QProcess::ExitStatus exitSta
   auto process = dynamic_cast<QProcess *>(sender());
   if(process)
   {
-    disconnect(process, SIGNAL(readyReadStandardError()),
-               this,    SLOT(onDataAvailable()));
-    disconnect(process, SIGNAL(readyReadStandardOOutput()),
-               this,    SLOT(onDataAvailable()));
-    disconnect(process, SIGNAL(finished(int, QProcess::ExitStatus)),
-               this,    SLOT(onProcessFinished(int, QProcess::ExitStatus)));
-
-    std::cout << "process finished with exit code " << exitCode << ", qprocess finished " << (exitStatus == QProcess::ExitStatus::NormalExit ? "normal" : "crash") << std::endl << std::flush;
-
     statusBar()->showMessage(tr("Finished creating a video"));
   }
 }
