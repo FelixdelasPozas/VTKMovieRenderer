@@ -131,6 +131,9 @@ void ScriptExecutor::waitForFrameToRender()
 {
   QApplication::processEvents();
 
+  // really, this is needed to allow the vtk pipelines to finish before the main thread executes a
+  // render in the main thread. Thinking on moving the execution thread to the same thread of the
+  // application and remove this.
   std::this_thread::sleep_for(std::chrono::seconds(1));
 
   emit render();
