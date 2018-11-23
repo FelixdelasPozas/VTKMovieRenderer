@@ -58,41 +58,41 @@ class ResourceLoaderThread
     virtual ~ResourceLoaderThread()
     {}
 
-    /** \brief Returns the list of initial actors in the scene.
-     *
-     */
-    QList<vtkSmartPointer<vtkActor>> actors() const
-    { return m_actors; }
-
     /** \brief Returns the list of raw vtkImageData.
      *
      */
-    QList<vtkSmartPointer<vtkImageData>> images() const
+    const QList<vtkSmartPointer<vtkImageData>> images() const
     { return m_images; };
 
     /** \brief Returns the list of vtk volumes.
      *
      */
-    QList<vtkSmartPointer<vtkVolume>> volumes() const
+    const QList<vtkSmartPointer<vtkVolume>> volumes() const
     { return m_volumes; }
 
     /** \brief Returns the list of logos (2D actors).
      *
      */
-    QList<vtkSmartPointer<vtkActor2D>> logos() const
+    const QList<vtkSmartPointer<vtkActor2D>> logos() const
     { return m_logos; }
 
-    /** \brief Returns the slicing plane.
+    /** \brief Returns the list of 3D actors.
      *
      */
-    vtkSmartPointer<vtkPlane> plane() const
-    { return m_plane; }
+    const QList<vtkSmartPointer<vtkActor>> actors() const
+    { return m_actors; }
 
-    /** \brief Returns the list of raw polydatas.
+    /** \brief Returns the list of polydatas.
      *
      */
-    QList<vtkSmartPointer<vtkPolyData>> polyDatas() const
+    const QList<vtkSmartPointer<vtkPolyData>> polyDatas() const
     { return m_polyDatas; }
+
+    /** \brief Returns the list of planes.
+     *
+     */
+    const QList<vtkSmartPointer<vtkPlane>> planes() const
+    { return m_planes; }
 
     /** \brief Returns the error string.
      *
@@ -114,12 +114,19 @@ class ResourceLoaderThread
     void error(const QString &message)
     { m_error = message; }
 
-    QList<vtkSmartPointer<vtkActor>>     m_actors;    /** list of vtk actors.                   */
+    /** \brief Helper method to load some resources. To be able to specify the resources to load.
+     *
+     */
+    void volumeLoaderUCHAR();
+    void volumeLoaderUSHORT();
+    void meshLoader();
+
     QList<vtkSmartPointer<vtkImageData>> m_images;    /** list of vtkImageData.                 */
+    QList<vtkSmartPointer<vtkPolyData>>  m_polyDatas; /** list of mesh objects.                 */
     QList<vtkSmartPointer<vtkVolume>>    m_volumes;   /** list of vtkVolume.                    */
     QList<vtkSmartPointer<vtkActor2D>>   m_logos;     /** list of 2D actors.                    */
-    QList<vtkSmartPointer<vtkPolyData>>  m_polyDatas; /** list of vtkPolyData.                  */
-    vtkSmartPointer<vtkPlane>            m_plane;     /** vtkPlane object for slicing.          */
+    QList<vtkSmartPointer<vtkActor>>     m_actors;    /** list of 3D actors.                    */
+    QList<vtkSmartPointer<vtkPlane>>     m_planes;    /** list of planes.                       */
 
     QString                              m_error;     /** error message or empty if successful. */
 

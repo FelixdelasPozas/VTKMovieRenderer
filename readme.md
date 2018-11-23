@@ -30,11 +30,11 @@ The only current option is build from source as binaries are not provided.
 # Screenshots
 Main dialog allows the user to reposition the camera in the view before the rendering process and configure a minimal set of rendering options. 
 
-![maindialog](https://cloud.githubusercontent.com/assets/12167134/26263701/148648a4-3cda-11e7-95d7-61758a62ccde.png)
+![maindialog](https://user-images.githubusercontent.com/12167134/48957944-5791c200-ef5c-11e8-8445-3bd70f2347d0.jpg)
 
 # Repository information
 
-**Version**: 1.0.0
+**Version**: 1.1.0
 
 **Status**: finished
 
@@ -42,7 +42,7 @@ Main dialog allows the user to reposition the camera in the view before the rend
 
 | Language                     |files          |blank        |comment           |code  |
 |:-----------------------------|--------------:|------------:|-----------------:|-----:|
-| C++                          |   4           | 253         |   141            |  943 |
-| C/C++ Header                 |   3           |  86         |   216            |  165 |
-| CMake                        |   1           |  17         |     3            |   57 |
-| **Total**                    | **8**        | **356**     | **360**          | **1165** |
+| C++                          |   5           | 327         |   181            | 1228 |
+| C/C++ Header                 |   4           | 103         |   253            |  201 |
+| CMake                        |   1           |  17         |     3            |   58 |
+| **Total**                    | **10**        | **447**     | **437**          | **1487** |

@@ -57,9 +57,12 @@ MovieRenderer::MovieRenderer()
 
   // just to avoid entering the same information over and over while testing, feel free to put your own or remove both lines.
   m_directory->setText("D:\\Descargas\\Render");
-  m_ffmpegExe->setText("D:\\Program Files\\ffmpeg-20150928-git-235381e-win64-static\\bin\\ffmpeg.exe");
+  m_ffmpegExe->setText("D:\\Program Files\\ffmpeg-20180424-d9706f7-win64-static\\bin\\ffmpeg.exe");
 
   connectSignals();
+
+  // See note below in updateRendererSettings. Shadows messes transparency.
+  m_shadows->setEnabled(false);
 
   setupVTKView();
   updateRendererSettings();
@@ -75,12 +78,12 @@ void MovieRenderer::onRenderPressed()
 {
   if(m_render->text() == "Render")
   {
-    if(!m_renderFull->isChecked() && !m_renderHalf->isChecked())
+    if(!m_renderFull->isChecked() && !m_renderHalf->isChecked() && !m_render4K->isChecked())
     {
       QMessageBox msgbox;
       msgbox.setWindowIcon(QIcon(":/MovieRenderer/application.svg"));
       msgbox.setWindowTitle("Error starting Render");
-      msgbox.setText(tr("At least one of these options must be enabled:\n - full hd\n - half hd"));
+      msgbox.setText(tr("At least one of these options must be enabled:\n - full hd\n - half hd\n - 4k"));
       msgbox.setIcon(QMessageBox::Icon::Critical);
       msgbox.exec();
 
@@ -92,7 +95,19 @@ void MovieRenderer::onRenderPressed()
       QMessageBox msgbox;
       msgbox.setWindowIcon(QIcon(":/MovieRenderer/application.svg"));
       msgbox.setWindowTitle("Error starting Render");
-      msgbox.setText(tr("Invalid MMMPEG executable, select a valid one"));
+      msgbox.setText(tr("Invalid MMMPEG executable! Select a valid one"));
+      msgbox.setIcon(QMessageBox::Icon::Critical);
+      msgbox.exec();
+
+      return;
+    }
+
+    if(!QDir{m_directory->text()}.exists())
+    {
+      QMessageBox msgbox;
+      msgbox.setWindowIcon(QIcon(":/MovieRenderer/application.svg"));
+      msgbox.setWindowTitle("Error starting Render");
+      msgbox.setText(tr("The directory '%1' to store frames\ndoesn't exist! Select a valid directory.").arg(m_directory->text()));
       msgbox.setIcon(QMessageBox::Icon::Critical);
       msgbox.exec();
 
@@ -135,7 +150,9 @@ void MovieRenderer::updateRendererSettings()
 {
   auto renderWindow = m_renderer->GetRenderWindow();
 
-  m_renderer->SetUseShadows(m_shadows->isChecked());
+  // Apparently enabling shadows disables opacity for mesh actors...
+  //  m_renderer->SetUseShadows(m_shadows->isChecked());
+
   renderWindow->SetPointSmoothing(m_pointSmoothing->isChecked());
   renderWindow->SetLineSmoothing(m_lineSmoothing->isChecked());
   renderWindow->SetPolygonSmoothing(m_polygonSmoothing->isChecked());
@@ -207,9 +224,9 @@ void MovieRenderer::onResourcesLoaded()
   onCameraResetPressed();
 
   m_renderer->GetActiveCamera()->SetFocalPoint(0,0,0);
-  m_renderer->GetActiveCamera()->SetPosition(2, 3, -1);
+  m_renderer->GetActiveCamera()->SetPosition(4, 0, -3);
   m_renderer->GetActiveCamera()->Roll(-90);
-  m_renderer->GetActiveCamera()->Zoom(1.3);
+  m_renderer->GetActiveCamera()->Zoom(2);
   m_renderer->ResetCamera();
 
   m_render->setEnabled(true);
@@ -225,7 +242,6 @@ void MovieRenderer::setupVTKView()
   m_view->show();
   m_renderer = vtkSmartPointer<vtkRenderer>::New();
   m_renderer->LightFollowCameraOn();
-  m_renderer->BackingStoreOff();
   m_renderer->GetActiveCamera(); // creates default camera.
 
   auto interactorstyle = vtkSmartPointer<vtkInteractorStyleTrackballCamera>::New();
@@ -233,7 +249,6 @@ void MovieRenderer::setupVTKView()
   interactorstyle->KeyPressActivationOff();
 
   auto renderWindow = m_view->GetRenderWindow();
-
   renderWindow->AddRenderer(m_renderer);
   renderWindow->GetInteractor()->SetInteractorStyle(interactorstyle);
 
@@ -343,51 +358,76 @@ void MovieRenderer::onRenderSignaled()
   auto renderWindow = m_view->GetRenderWindow();
   renderWindow->Render();
 
-  // Screenshot
-  auto windowToImageFilter = vtkSmartPointer<vtkWindowToImageFilter>::New();
-  windowToImageFilter->SetInput(renderWindow);
-  windowToImageFilter->SetFixBoundary(true);
-  windowToImageFilter->SetMagnification(1);
-  windowToImageFilter->SetInputBufferTypeToRGBA();
-  windowToImageFilter->Update();
-
-  auto screenshot = windowToImageFilter->GetOutput();
   auto outputDir = QDir::toNativeSeparators(m_directory->text() + "/");
 
-  if(m_renderFull->isChecked())
+  if(m_renderFull->isChecked() || m_renderHalf->isChecked())
   {
-    auto name = outputDir + QString("Frame_HD_%1.png").arg(QString::number(m_frameNum), 5, QChar('0'));
+    // Screenshot
+    auto windowToImageFilter = vtkSmartPointer<vtkWindowToImageFilter>::New();
+    windowToImageFilter->SetInput(renderWindow);
+    windowToImageFilter->SetFixBoundary(true);
+    windowToImageFilter->SetMagnification(1);
+    windowToImageFilter->SetInputBufferTypeToRGBA();
+    windowToImageFilter->Update();
 
-    auto writer = vtkSmartPointer<vtkPNGWriter>::New();
-    writer->SetFileName(name.toStdString().c_str());
-    writer->SetInputData(screenshot);
-    writer->Write();
+    auto screenshot = windowToImageFilter->GetOutput();
+
+    if(m_renderFull->isChecked()) // 1280x720
+    {
+      auto name = outputDir + QString("Frame_HD_%1.png").arg(QString::number(m_frameNum), 5, QChar('0'));
+
+      auto writer = vtkSmartPointer<vtkPNGWriter>::New();
+      writer->SetFileName(name.toStdString().c_str());
+      writer->SetInputData(screenshot);
+      writer->Write();
+    }
+
+    if(m_renderHalf->isChecked()) // 640x360
+    {
+      auto interpolator = vtkSmartPointer<vtkImageSincInterpolator>::New();
+      interpolator->SetWindowFunctionToLanczos();
+      interpolator->AntialiasingOn();
+
+      auto resize = vtkSmartPointer<vtkImageResize>::New();
+      resize->InterpolateOn();
+      resize->SetInterpolator(interpolator);
+      resize->SetInputData(screenshot);
+      resize->SetOutputDimensions(1280/2, 720/2, 1);
+      resize->Update();
+
+      auto name = outputDir + QString("Frame_Half_%1.png").arg(QString::number(m_frameNum), 5, QChar('0'));
+
+      auto writer = vtkSmartPointer<vtkPNGWriter>::New();
+      writer->SetFileName(name.toStdString().c_str());
+      writer->SetInputData(resize->GetOutput());
+      writer->Write();
+    }
   }
 
-  if(m_renderHalf->isChecked())
+  if(m_render4K->isChecked()) // 3840x2160
   {
-    auto interpolator = vtkSmartPointer<vtkImageSincInterpolator>::New();
-    interpolator->SetWindowFunctionToLanczos();
-    interpolator->AntialiasingOn();
+    // Screenshot
+    auto windowToImageFilter = vtkSmartPointer<vtkWindowToImageFilter>::New();
+    windowToImageFilter->SetInput(renderWindow);
+    windowToImageFilter->SetFixBoundary(true);
+    windowToImageFilter->SetMagnification(3);
+    windowToImageFilter->SetFixBoundary(true);
+    windowToImageFilter->SetInputBufferTypeToRGBA();
+    windowToImageFilter->Update();
 
-    auto resize = vtkSmartPointer<vtkImageResize>::New();
-    resize->InterpolateOn();
-    resize->SetInterpolator(interpolator);
-    resize->SetInputData(screenshot);
-    resize->SetOutputDimensions(1280/2, 720/2, 1);
-    resize->Update();
-
-    auto name = outputDir + QString("Frame_Half_%1.png").arg(QString::number(m_frameNum), 5, QChar('0'));
+    auto name = outputDir + QString("Frame_4K_%1.png").arg(QString::number(m_frameNum), 5, QChar('0'));
 
     auto writer = vtkSmartPointer<vtkPNGWriter>::New();
     writer->SetFileName(name.toStdString().c_str());
-    writer->SetInputData(resize->GetOutput());
+    writer->SetInputData(windowToImageFilter->GetOutput());
     writer->Write();
   }
 
   statusBar()->showMessage(tr("Wrote frame number %1").arg(QString::number(m_frameNum)));
 
   ++m_frameNum;
+
+  QApplication::processEvents();
 
   m_executor->nextFrame();
 }
@@ -491,19 +531,35 @@ bool MovieRenderer::eventFilter(QObject *object, QEvent *e)
 //--------------------------------------------------------------------
 void MovieRenderer::makeMovie()
 {
-  QStringList resolutions;
+  QStringList resolutions, frameStrings, outputNames;
+
   if(m_renderFull->isChecked())
   {
     resolutions << "1280x720";
+    frameStrings << QString{"\"%1Frame_HD_%05d.png\""};
+    outputNames << QString{"%1out_HD.mp4"};
   }
 
   if(m_renderHalf->isChecked())
   {
     resolutions << "640x360";
+    frameStrings << QString{"\"%1Frame_Half_%05d.png\""};
+    outputNames << QString{"%1out_HalfHD.mp4"};
   }
 
-  for(auto resolution: resolutions)
+  if(m_render4K->isChecked())
   {
+    resolutions << "3840x2160";
+    frameStrings << QString{"\"%1Frame_4k_%05d.png\""};
+    outputNames << QString{"%1out_4K.mp4"};
+  }
+
+  for(int i = 0; i < resolutions.size(); ++i)
+  {
+    auto resolution  = resolutions.at(i);
+    auto frameString = frameStrings.at(i);
+    auto outputName  = outputNames.at(i);
+
     statusBar()->showMessage(tr("Creating %1 movie").arg(resolution));
 
     QProcess ffmpegProcess{this};
@@ -513,13 +569,13 @@ void MovieRenderer::makeMovie()
     arguments << "-r" << "30";
     arguments << "-y";
     arguments << "-s" << resolution;
-    arguments << "-i" << QString("\"%1Frame_HD_%05d.png\"").arg(path);
+    arguments << "-i" << frameString.arg(path);
     arguments << "-vcodec" << "libx264";
     arguments << "-crf" << "1";
     arguments << "-pix_fmt" << "yuv420p";
     arguments << "-qp" << "0";
     arguments << "-f" << "mp4";
-    arguments << QString("%1out.mp4").arg(path);
+    arguments << outputName.arg(path);
 
     connect(&ffmpegProcess, SIGNAL(readyReadStandardError()),
             this,          SLOT(onDataAvailable()));

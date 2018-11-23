@@ -26,7 +26,7 @@ find_package (ITK REQUIRED)
 include (${ITK_USE_FILE})
 
 set (VTK_MOVIE_RENDERER_VERSION_MAJOR 1)
-set (VTK_MOVIE_RENDERER_VERSION_MINOR 0)
+set (VTK_MOVIE_RENDERER_VERSION_MINOR 1)
 set (VTK_MOVIE_RENDERER_VERSION_PATCH 0)
 
 # Use the include path and library for Qt that is used by VTK.
@@ -55,6 +55,7 @@ set (SOURCE_FILES
   MovieRenderer.cpp
   ResourceLoader.cpp
   ScriptExecutor.cpp
+  Utils.cpp
   )
 
 

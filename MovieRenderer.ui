@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>1572</width>
-    <height>756</height>
+    <height>758</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -60,9 +60,16 @@
          </property>
          <layout class="QVBoxLayout" name="verticalLayout_3">
           <item>
+           <widget class="QCheckBox" name="m_render4K">
+            <property name="text">
+             <string>4K Video</string>
+            </property>
+           </widget>
+          </item>
+          <item>
            <widget class="QCheckBox" name="m_renderFull">
             <property name="text">
-             <string>Render HD Video</string>
+             <string>HD Video</string>
             </property>
             <property name="checked">
              <bool>true</bool>
@@ -72,7 +79,7 @@
           <item>
            <widget class="QCheckBox" name="m_renderHalf">
             <property name="text">
-             <string>Render 1/2 HD Video</string>
+             <string>1/2 HD Video</string>
             </property>
             <property name="checked">
              <bool>false</bool>

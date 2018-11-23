@@ -123,17 +123,22 @@ class ScriptExecutor
 
     // script commands
     void threesixtynoscope(); // never got to make one in Counter Strike...
-    void fadeOutVolume();
-    void fadeInVolume();
     void reslice();
+    void fadeIn();
+    void fadeOut();
 
-    // data for the script.
-    vtkSmartPointer<vtkRenderer>  m_renderer;
-    vtkSmartPointer<vtkVolume>    m_volume;
-    vtkSmartPointer<vtkActor>     m_mesh;
+    friend class MovieRenderer;
+
+    vtkSmartPointer<vtkRenderer>  m_renderer;   /** vtk renderer. */
+
+    // data for the script, depends on the scene.
     vtkSmartPointer<vtkPlane>     m_plane;
     vtkSmartPointer<vtkImageData> m_image;
-    vtkSmartPointer<vtkPolyData>  m_polyData;
+    vtkSmartPointer<vtkImageData> m_mciImage;
+    vtkSmartPointer<vtkPolyData>  m_brainMesh;
+    vtkSmartPointer<vtkPolyData>  m_mciMesh;
+    vtkSmartPointer<vtkActor>     m_brainActor;
+    vtkSmartPointer<vtkActor>     m_mciActor;
 };
 
 #endif // SCRIPTEXECUTOR_H_

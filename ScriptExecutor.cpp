@@ -23,9 +23,10 @@
 
 // Qt
 #include <QApplication>
+#include <QDebug>
 
 // VTK
-#include <vtkPolyData.h>
+#include <vtkSphereSource.h>
 #include <vtkActor.h>
 #include <vtkActor2D.h>
 #include <vtkVolume.h>
@@ -36,18 +37,14 @@
 #include <vtkVolumeProperty.h>
 #include <vtkPiecewiseFunction.h>
 #include <vtkPlane.h>
-#include <vtkClipPolyData.h>
 #include <vtkProperty.h>
-#include <vtkPolyDataNormals.h>
 #include <vtkMapper.h>
-#include <vtkPolyDataMapper.h>
 #include <vtkImageData.h>
 #include <vtkLookupTable.h>
 #include <vtkImageReslice.h>
 #include <vtkImageMapToColors.h>
 #include <vtkTexture.h>
 #include <vtkCutter.h>
-#include <vtkContourTriangulator.h>
 #include <vtkDataSetMapper.h>
 #include <vtkPNGWriter.h>
 #include <vtkPointData.h>
@@ -58,7 +55,24 @@
 #include <vtkImageSlice.h>
 #include <vtkImageProperty.h>
 #include <vtkFloatArray.h>
+#include <vtkScalarBarActor.h>
+#include <vtkRenderWindow.h>
+#include <vtkImageBlend.h>
+#include <vtkCullerCollection.h>
+#include <vtkCuller.h>
+#include <vtkPlaneCollection.h>
+#include <vtkPlane.h>
+#include <vtkAbstractVolumeMapper.h>
+#include <vtkClipPolyData.h>
+#include <vtkFixedPointVolumeRayCastMapper.h>
+#include <vtkDepthSortPolyData.h>
+#include <vtkPolyDataMapper.h>
+#include <vtkContourTriangulator.h>
+#include <vtkImageCanvasSource2D.h>
+#include <vtkTextActor.h>
+#include <vtkTextProperty.h>
 
+// C++
 #include <cstring> // memcpy
 #include <limits>  // min, max
 #include <chrono>
@@ -78,21 +92,28 @@ void ScriptExecutor::run()
 {
   if(!m_error.isEmpty()) return;
 
-  waitFrames(25);
+  fadeIn();
 
-  fadeOutVolume();
+  if(m_abort) return;
+  waitFrames(5);
 
-  waitFrames(25);
-
+  if(m_abort) return;
   reslice();
 
-  waitFrames(25);
+  if(m_abort) return;
+  waitFrames(5);
 
-  fadeInVolume();
+  if(m_abort) return;
+  fadeOut();
 
-  waitFrames(25);
+  if(m_abort) return;
+  waitFrames(5);
 
+  if(m_abort) return;
   threesixtynoscope();
+
+  if(m_abort) return;
+  waitFrames(10);
 
   // finished!
 }
@@ -100,30 +121,78 @@ void ScriptExecutor::run()
 //--------------------------------------------------------------------
 void ScriptExecutor::getResources(ResourceLoaderThread *loader)
 {
-  m_volume   = loader->volumes().first();
-  m_mesh     = loader->actors().first();
-  m_plane    = loader->plane();
-  m_image    = loader->images().first();
-  m_polyData = loader->polyDatas().first();
+  m_image     = loader->images().first();
+  m_mciImage  = loader->images().last();
+  m_brainMesh = loader->polyDatas().first();
+  m_mciMesh   = loader->polyDatas().last();
 
-  if(!m_renderer || !m_mesh || !m_volume || !m_plane || !m_image || !m_polyData)
+  if(!m_renderer || !m_image || !m_mciImage || !m_brainMesh || !m_mciMesh)
   {
     error("Invalid data.");
     std::cout << "error in parameters in script executor" << std::endl << std::flush;
     return;
   }
 
-  for(auto actor: loader->actors())
-  {
-    m_renderer->AddActor(actor);
-  }
+  // Define a clipping plane
+  m_plane = vtkSmartPointer<vtkPlane>::New();
+  m_plane->SetNormal(0., -1., 0.);
+  m_plane->SetOrigin(0, 108.8, 0);
 
-  m_renderer->AddVolume(m_volume);
+  // Clip the source with the plane
+  auto clipper = vtkSmartPointer<vtkClipPolyData>::New();
+  clipper->DebugOn();
+  clipper->GlobalWarningDisplayOn();
+  clipper->ReleaseDataFlagOff();
+  clipper->SetInputData(m_brainMesh);
+  clipper->SetClipFunction(m_plane);
+
+  //Create a mapper and actor
+  auto mapper = vtkSmartPointer<vtkPolyDataMapper>::New();
+  mapper->ReleaseDataFlagOff();
+  mapper->SetInputConnection(clipper->GetOutputPort());
+  mapper->SetScalarVisibility(false);
+
+  m_brainActor = vtkSmartPointer<vtkActor>::New();
+  m_brainActor->SetMapper(mapper);
+  m_brainActor->GetProperty()->SetColor(0.3, 0.3, 0.3);
+  m_brainActor->GetProperty()->SetInterpolationToPhong();
+  m_brainActor->GetProperty()->SetOpacity(0.4);
+  m_brainActor->GetProperty()->SetBackfaceCulling(true);
+  m_brainActor->Modified();
+
+  m_renderer->AddActor(m_brainActor);
+
+  mapper = vtkSmartPointer<vtkPolyDataMapper>::New();
+  mapper->SetInputData(m_mciMesh);
+  mapper->SetScalarVisibility(false);
+  mapper->Update();
+
+  m_mciActor = vtkSmartPointer<vtkActor>::New();
+  m_mciActor->GetProperty()->SetColor(1.,0.,0.);
+  m_mciActor->GetProperty()->SetBackfaceCulling(true);
+  m_mciActor->GetProperty()->SetOpacity(0.6);
+  m_mciActor->SetMapper(mapper);
+
+  m_renderer->AddActor(m_mciActor);
 
   for(auto actor: loader->logos())
   {
     m_renderer->AddActor(actor);
   }
+
+  auto windowSize = m_renderer->GetRenderWindow()->GetSize();
+
+  auto textActor = vtkSmartPointer<vtkTextActor>::New();
+  textActor->SetInput("Predictor of impending MCI");
+  textActor->SetPosition(10, windowSize[1]-40);
+// 4k doesn't scale 2D actors, needs those modifications.
+//  textActor->SetPosition(100, 2160-140);
+//  textActor->GetTextProperty()->SetFontSize(88);
+  textActor->GetTextProperty()->SetFontFamilyToArial();
+  textActor->GetTextProperty()->SetFontSize(28);
+  textActor->GetTextProperty()->SetColor(1.0, 1.0, 1.0);
+
+  m_renderer->AddActor2D(textActor);
 }
 
 //--------------------------------------------------------------------
@@ -131,16 +200,19 @@ void ScriptExecutor::waitForFrameToRender()
 {
   QApplication::processEvents();
 
-  // really, this is needed to allow the vtk pipelines to finish before the main thread executes a
-  // render in the main thread. Thinking on moving the execution thread to the same thread of the
-  // application and remove this.
-  std::this_thread::sleep_for(std::chrono::seconds(1));
+  if(!m_abort)
+  {
+    // really, this is needed to allow the vtk pipelines to finish before the main thread executes a
+    // render in the main thread. Thinking on moving the execution thread to the same thread of the
+    // application and remove this.
+    std::this_thread::sleep_for(std::chrono::seconds(1));
 
-  emit render();
+    emit render();
 
-  m_mutex.lock();
-  m_waitCondition.wait(&m_mutex);
-  m_mutex.unlock();
+    m_mutex.lock();
+    m_waitCondition.wait(&m_mutex);
+    m_mutex.unlock();
+  }
 }
 
 //--------------------------------------------------------------------
@@ -161,49 +233,9 @@ void ScriptExecutor::threesixtynoscope()
   {
     if(m_abort) return;
 
-    m_mesh->RotateWXYZ(rad, 0, 0, 1);
-    m_volume->RotateWXYZ(rad, 0, 0, 1);
+    m_brainActor->RotateWXYZ(rad, 0, 0, 1);
+    m_mciActor->RotateWXYZ(rad, 0, 0, 1);
 
-    waitForFrameToRender();
-  }
-}
-
-//--------------------------------------------------------------------
-void ScriptExecutor::fadeOutVolume()
-{
-  auto opacity = m_volume->GetProperty()->GetGradientOpacity();
-  for (double i = 0; i <= 1; i += 0.015)
-  {
-    if (m_abort) return;
-    opacity->RemoveAllPoints();
-    for (int j = 0; j < 256; ++j)
-    {
-      auto point = j / 255.0 - i;
-      if (point < 0) point = 0;
-      opacity->AddPoint(i, point);
-    }
-
-    m_volume->Update();
-    waitForFrameToRender();
-  }
-}
-
-//--------------------------------------------------------------------
-void ScriptExecutor::fadeInVolume()
-{
-  auto opacity = m_volume->GetProperty()->GetGradientOpacity();
-  for (double i = 1; i >= 0; i -= 0.015)
-  {
-    if (m_abort) return;
-    opacity->RemoveAllPoints();
-    for (int j = 0; j < 256; ++j)
-    {
-      auto point = j / 255.0 - i;
-      if (point < 0) point = 0;
-      opacity->AddPoint(i, point);
-    }
-
-    m_volume->Update();
     waitForFrameToRender();
   }
 }
@@ -211,92 +243,126 @@ void ScriptExecutor::fadeInVolume()
 //--------------------------------------------------------------------
 void ScriptExecutor::reslice()
 {
-  // need to compute the actors positions and the data position to update pipelines correctly in sync.
-  double meshBounds[6];
-  m_polyData->GetBounds(meshBounds);
-  auto betweenMesh = [meshBounds] (double point) { return (meshBounds[2] <= point && point <= meshBounds[3]);};
+  const QString shotPath{"D:\\Descargas\\test\\"};
 
-  int imageExtent[6];
-  double imageSpacing[6];
-  m_image->GetExtent(imageExtent);
-  m_image->GetSpacing(imageSpacing);
-  double imageBounds[6] { imageExtent[0] * imageSpacing[0], imageExtent[1] * imageSpacing[0], imageExtent[2] * imageSpacing[1], imageExtent[3] * imageSpacing[1], imageExtent[4] * imageSpacing[2], imageExtent[5] * imageSpacing[2] };
-  auto betweenImage = [imageBounds] (double point) { return (imageBounds[2] <= point && point <= imageBounds[3]);};
+  // SCALAR BAR
+  auto barLut = vtkSmartPointer<vtkLookupTable>::New();
+  barLut->SetTableRange(4.2, 6.2);
+  barLut->SetHueRange(0.0, 1.0);
+  barLut->SetSaturationRange(1.0, 1.0);
+  barLut->SetAlphaRange(1.0, 1.0);
+  barLut->SetValueRange(1.0, 1.0);
+  barLut->Build();
 
-  std::cout << "mesh bounds " << meshBounds[0] << "," << meshBounds[1] << "," << meshBounds[2] << "," << meshBounds[3] << "," << meshBounds[4] << "," << meshBounds[5] << std::endl;
-  std::cout << "image extent " << imageExtent[0] << "," << imageExtent[1] << "," << imageExtent[2] << "," << imageExtent[3] << "," << imageExtent[4] << "," << imageExtent[5] << std::endl;
-  std::cout << "image spacing " << imageSpacing[0] << "," << imageSpacing[1] << "," << imageSpacing[2] << std::endl;
-  std::cout << "image bounds " << imageBounds[0] << "," << imageBounds[1] << "," << imageBounds[2] << "," << imageBounds[3] << "," << imageBounds[4] << "," << imageBounds[5] << std::endl << std::flush;
+  auto scalarBar = vtkSmartPointer<vtkScalarBarActor>::New();
+  scalarBar->SetLookupTable(barLut);
+  scalarBar->SetTitle("t-values");
+  scalarBar->SetTitleRatio(0.8);
+  scalarBar->GetLabelTextProperty()->SetFontFamilyToArial();
+  scalarBar->GetLabelTextProperty()->SetColor(1.0, 1.0, 1.0);
+  scalarBar->SetNumberOfLabels(4);
+// 4K doesn't scale 2D actors, needs those modifications.
+//  scalarBar->GetLabelTextProperty()->SetFontSize(58);
+//  scalarBar->SetMaximumHeightInPixels(1200);
+//  scalarBar->SetMaximumWidthInPixels(140);
+  scalarBar->SetMaximumHeightInPixels(400);
+  scalarBar->SetMaximumWidthInPixels(50);
+  scalarBar->SetAnnotationTextScaling(true);
 
-  double meshActorBounds[6];
-  m_mesh->GetBounds(meshActorBounds);
-  double volumeBounds[6];
-  m_volume->GetBounds(volumeBounds);
+  auto windowSize = m_renderer->GetRenderWindow()->GetSize();
+  scalarBar->SetDisplayPosition(windowSize[0]-100, windowSize[1]/2 - 200);
+//  scalarBar->SetDisplayPosition(3840-275, 480);
+  scalarBar->Modified();
 
-  std::cout << "mesh actor bounds " << meshActorBounds[0] << "," << meshActorBounds[1] << "," << meshActorBounds[2] << "," << meshActorBounds[3] << "," << meshActorBounds[4] << "," << meshActorBounds[5] << std::endl;
-  std::cout << "volume actor bounds" << volumeBounds[0] << "," << volumeBounds[1] << "," << volumeBounds[2] << "," << volumeBounds[3] << "," << volumeBounds[4] << "," << volumeBounds[5] << std::endl << std::flush;
+  m_renderer->AddActor(scalarBar);
 
-  double meshPosition[3], volumePosition[3];
-  m_mesh->GetPosition(meshPosition);
-  m_volume->GetPosition(volumePosition);
-  std::cout << "mesh actor position " << meshPosition[0] << "," << meshPosition[1] << "," << meshPosition[2] << std::endl;
-  std::cout << "volume actor position " << volumePosition[0] << "," << volumePosition[1] << "," << volumePosition[2] << std::endl << std::flush;
+  int extent[6];
+  m_image->GetExtent(extent);
 
-  std::cout << "mesh length " << meshBounds[3] - meshBounds[2] << std::endl;
-  std::cout << "mesh actor length " << meshActorBounds[3] - meshActorBounds[2] << std::endl;
-  std::cout << "mesh pos difference " << meshBounds[2] - meshActorBounds[2] << std::endl;
-  std::cout << "volume lenth " << imageBounds[3] - imageBounds[2] << std::endl;
-  std::cout << "volume actor length " << volumeBounds[3] - volumeBounds[2] << std::endl;
-  std::cout << "volume pos difference " << imageBounds[2] - volumeBounds[2] << std::endl;
-
-  auto world2mesh = [meshBounds, meshActorBounds] (double point) { return point - meshActorBounds[2] + meshBounds[2];};
-  auto world2volu = [imageBounds, volumeBounds] (double point)   { return point - volumeBounds[2];}; // imagebounds[2] = 0;
-  double step = (meshBounds[3] - meshBounds[2]) / 400.0;
-
-  // color table for the slices.
-  auto colorTable = vtkSmartPointer<vtkLookupTable>::New();
-  colorTable->SetTableRange(0, 255);
-  colorTable->SetValueRange(0.0, 1.0);
-  colorTable->SetSaturationRange(0.0, 0.0);
-  colorTable->SetHueRange(0.0, 0.0);
-  colorTable->SetAlphaRange(1.0, 1.0);
-  colorTable->SetNumberOfColors(256);
-  colorTable->Build();
-
-  double coronal[16] = { 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1 };
+  const double coronal[16] = { 1, 0, 0, 0, 0, 0, 1, 0, 0, 1, 0, 0, 0, 0, 0, 1 };
 
   auto matrix = vtkSmartPointer<vtkMatrix4x4>::New();
   matrix->DeepCopy(coronal);
 
-  // reslice pipeline to generate the texture.
+  // reslice pipeline to generate the brain texture.
   auto reslice = vtkSmartPointer<vtkImageReslice>::New();
   reslice->SetInputData(m_image);
   reslice->SetOutputDimensionality(2);
   reslice->SetNumberOfThreads(1);
   reslice->SetResliceAxes(matrix);
   reslice->SetInterpolationModeToCubic();
-  reslice->SetOutputExtent(imageExtent[0], imageExtent[1], imageExtent[4], imageExtent[5], 0, 0);
+  reslice->SetOutputExtent(extent[0], extent[1], extent[4], extent[5], 0, 0);
+
+  auto brainLookupTable = vtkSmartPointer<vtkLookupTable>::New();
+  brainLookupTable->Allocate();
+  brainLookupTable->SetTableRange(0,255);
+  brainLookupTable->SetValueRange(0., 1.);
+  brainLookupTable->SetHueRange(0.,0.);
+  brainLookupTable->SetAlphaRange(1., 1.);
+  brainLookupTable->SetNumberOfColors(256);
+  brainLookupTable->SetRampToLinear();
+  brainLookupTable->SetSaturationRange(0.,0.);
+  brainLookupTable->SetNumberOfTableValues(256);
+  brainLookupTable->Build();
 
   auto resliceMapper = vtkSmartPointer<vtkImageMapToColors>::New();
-  resliceMapper->SetLookupTable(colorTable);
+  resliceMapper->SetLookupTable(brainLookupTable);
   resliceMapper->SetNumberOfThreads(1);
   resliceMapper->SetOutputFormatToRGBA();
   resliceMapper->SetInputConnection(reslice->GetOutputPort());
   resliceMapper->SetUpdateExtentToWholeExtent();
 
+  // other data: MCI
+  auto resliceMCI = vtkSmartPointer<vtkImageReslice>::New();
+  resliceMCI->SetInputData(m_mciImage);
+  resliceMCI->SetOutputDimensionality(2);
+  resliceMCI->SetNumberOfThreads(1);
+  resliceMCI->SetResliceAxes(matrix);
+  resliceMCI->SetInterpolationModeToCubic();
+  resliceMCI->SetOutputExtent(extent[0], extent[1], extent[4], extent[5], 0, 0);
+
+  auto MCILookupTable = vtkSmartPointer<vtkLookupTable>::New();
+  MCILookupTable->Allocate();
+  MCILookupTable->SetTableRange(150, 255);
+  MCILookupTable->SetValueRange(1., 1.);
+  MCILookupTable->SetHueRange(0.,1.);
+  MCILookupTable->SetAlphaRange(1., 1.);
+  MCILookupTable->SetSaturationRange(1.,1.);
+  //MCILookupTable->SetNumberOfColors(256);
+  MCILookupTable->SetRampToLinear();
+  MCILookupTable->SetNumberOfTableValues(255-150);
+  MCILookupTable->Build();
+
+  auto rgba = MCILookupTable->GetTableValue(0);
+  rgba[3] = 0.; // Make the first complete transparent.
+  MCILookupTable->SetTableValue(0, 0,0,0);
+
+  auto resliceMapperMCI = vtkSmartPointer<vtkImageMapToColors>::New();
+  resliceMapperMCI->SetLookupTable(MCILookupTable);
+  resliceMapperMCI->SetNumberOfThreads(1);
+  resliceMapperMCI->SetOutputFormatToRGBA();
+  resliceMapperMCI->SetInputConnection(resliceMCI->GetOutputPort());
+  resliceMapperMCI->SetUpdateExtentToWholeExtent();
+
+  auto blend = vtkSmartPointer<vtkImageBlend>::New();
+  blend->AddInputData(resliceMapper->GetOutput());
+  blend->AddInputData(resliceMapperMCI->GetOutput());
+  blend->SetOpacity(0, 0.7);
+  blend->SetOpacity(1, 0.3);
+  blend->SetBlendModeToNormal();
+
   // texture of the slice actor.
   auto texture = vtkSmartPointer<vtkTexture>::New();
-  texture->SetInputConnection(resliceMapper->GetOutputPort());
+  texture->SetInputConnection(blend->GetOutputPort());
   texture->InterpolateOn();
 
-  // cutter creates the slice contour.
-  auto cutterPlane = vtkSmartPointer<vtkPlane>::New();
-  cutterPlane->SetNormal(0, -1.0, 0);
-  cutterPlane->SetOrigin(0.0, meshBounds[3], 0.0);
+  auto plane = vtkPlane::New();
+  plane->SetOrigin(0, 108.8,0);
+  plane->SetNormal(0.,-1.,0.);
 
   auto cutter = vtkSmartPointer<vtkCutter>::New();
-  cutter->SetInputData(m_polyData);
-  cutter->SetCutFunction(cutterPlane);
+  cutter->SetInputData(m_brainMesh);
+  cutter->SetCutFunction(plane);
   cutter->Update();
 
   // triangulator fills the contour creating a polygon that can be textured.
@@ -309,86 +375,30 @@ void ScriptExecutor::reslice()
   // final textured actor.
   auto surfaceActor = vtkSmartPointer<vtkActor>::New();
   surfaceActor->SetMapper(cutterMapper);
-  surfaceActor->SetPosition(m_mesh->GetPosition()[0], m_mesh->GetPosition()[1] + 0.1, m_mesh->GetPosition()[2]);
   surfaceActor->SetTexture(texture);
 
   m_renderer->AddActor(surfaceActor);
 
-  double worldPoint = meshActorBounds[3]; // std:min(meshActorBounds[3], volumeBounds[3]);
+  auto step = 217.6/400.;
+  const auto initialPoint = 108.8 - (20 * step);
+  const auto finalPoint   = -108.8 + (20 * step);
+  auto reslicePoint = initialPoint;
 
-  std::cout << "starting with " << worldPoint << " - in mesh: " << world2mesh(worldPoint) << " - in image: " << world2volu(worldPoint) << std::endl;
-  std::cout << "valid in mesh " << (betweenMesh(world2mesh(worldPoint)) ? "true" : "false") << " - valid in image " << (betweenImage(world2volu(worldPoint)) ? "true" : "false") << std::endl << std::flush;
+  auto length = 181.6; // the same for length in X and Z axis.
 
-  auto constantX = 1.4; // hard coded to avoid computation.
-  auto constantZ = 1.4; // hard coded to avoid computation.
-  auto lengthX = constantX*(meshBounds[1]-meshBounds[0]);
-  auto lengthZ = constantZ*(meshBounds[5]-meshBounds[4]);
-
-  while (betweenMesh(world2mesh(worldPoint - step)) && betweenImage(world2volu(worldPoint - step)))
+  while(reslicePoint > finalPoint)
   {
-    if (m_abort) return;
-
-    auto imagePoint = world2volu(worldPoint);
-
-    // update texture
-    matrix->SetElement(1, 3, imagePoint);
+    matrix->SetElement(1, 3, reslicePoint + 108.8); // images have not been translated after loading.
     matrix->Modified();
+
+    resliceMapper->Update();
+    resliceMapperMCI->Update();
+    blend->Update();
+
     texture->Update();
 
-    auto meshPoint = world2mesh(worldPoint);
-    cutterPlane->SetOrigin(0, meshPoint, 0);
-
-    // update the slice actor
-    triangulator->Update();
-
-    // need to generate texture coordinates for the slice actor each frame.
-    auto data = triangulator->GetOutput();
-    auto array = vtkSmartPointer<vtkFloatArray>::New();
-    array->SetNumberOfComponents(3);
-    array->SetNumberOfTuples(data->GetNumberOfPoints());
-    array->SetName("TextureCoordinates");
-    array->Allocate(data->GetNumberOfPoints());
-
-    for(int i = 0; i < data->GetNumberOfPoints(); ++i)
-    {
-      double coords[3], tcoords[3];
-      data->GetPoint(i, coords);
-      tcoords[0] = (coords[0] - constantX*meshBounds[0])/lengthX + 0.02; // additional shift needed
-      tcoords[1] = (coords[2] - constantZ*meshBounds[4])/lengthZ + 0.02; //
-      tcoords[2] = 0;
-
-      array->SetTuple(i, tcoords);
-    }
-
-    // assign texture coordinates for texture mapping over actor.
-    triangulator->GetOutput()->GetPointData()->SetTCoords(array);
-
-    cutterMapper->SetInputData(triangulator->GetOutput());
-    cutterMapper->Update();
-    surfaceActor->Modified();
-
-    // update the slicing of the original mesh to disappear.
-    m_plane->SetOrigin(0, meshPoint, 0);
-
-    worldPoint -= step;
-    waitForFrameToRender();
-  }
-
-  // or There and Back Again...
-  worldPoint += 2 * step;
-
-  while (betweenMesh(world2mesh(worldPoint)) && betweenImage(world2volu(worldPoint)))
-  {
-    if (m_abort) return;
-
-    auto imagePoint = world2volu(worldPoint);
-
-    matrix->SetElement(1, 3, imagePoint);
-    matrix->Modified();
-    texture->Update();
-
-    auto meshPoint = world2mesh(worldPoint);
-    cutterPlane->SetOrigin(0, meshPoint, 0);
+    plane->SetOrigin(0, reslicePoint, 0.);
+    plane->Modified();
 
     triangulator->Update();
 
@@ -403,8 +413,8 @@ void ScriptExecutor::reslice()
     {
       double coords[3], tcoords[3];
       data->GetPoint(i, coords);
-      tcoords[0] = (coords[0] - constantX*meshBounds[0])/lengthX + 0.02;
-      tcoords[1] = (coords[2] - constantZ*meshBounds[4])/lengthZ + 0.02;
+      tcoords[0] = (coords[0]+90.8)/length;
+      tcoords[1] = (coords[2]+90.8)/length;
       tcoords[2] = 0;
 
       array->SetTuple(i, tcoords);
@@ -416,11 +426,107 @@ void ScriptExecutor::reslice()
     cutterMapper->Update();
     surfaceActor->Modified();
 
-    m_plane->SetOrigin(0, meshPoint, 0);
+    m_plane->SetOrigin(0., reslicePoint, 0.);
 
-    worldPoint += step;
+    waitForFrameToRender();
+    if(m_abort) return;
+
+    reslicePoint -= step;
+  }
+
+  waitFrames(15);
+
+  while(reslicePoint < initialPoint)
+  {
+    matrix->SetElement(1, 3, reslicePoint + 108.8); // images have not been translated after loading.
+    matrix->Modified();
+
+    resliceMapper->Update();
+    resliceMapperMCI->Update();
+    blend->Update();
+
+    texture->Update();
+
+    plane->SetOrigin(0, reslicePoint, 0.);
+    plane->Modified();
+
+    triangulator->Update();
+
+    auto data = triangulator->GetOutput();
+    auto array = vtkSmartPointer<vtkFloatArray>::New();
+    array->SetNumberOfComponents(3);
+    array->SetNumberOfTuples(data->GetNumberOfPoints());
+    array->SetName("TextureCoordinates");
+    array->Allocate(data->GetNumberOfPoints());
+
+    for(int i = 0; i < data->GetNumberOfPoints(); ++i)
+    {
+      double coords[3], tcoords[3];
+      data->GetPoint(i, coords);
+      tcoords[0] = (coords[0]+90.8)/length;
+      tcoords[1] = (coords[2]+90.8)/length;
+      tcoords[2] = 0;
+
+      array->SetTuple(i, tcoords);
+    }
+
+    triangulator->GetOutput()->GetPointData()->SetTCoords(array);
+
+    cutterMapper->SetInputData(triangulator->GetOutput());
+    cutterMapper->Update();
+    surfaceActor->Modified();
+
+    m_plane->SetOrigin(0., reslicePoint, 0.);
+
+    waitForFrameToRender();
+    if(m_abort) return;
+
+    reslicePoint += step;
+  }
+
+  m_renderer->RemoveActor(scalarBar);
+}
+
+//--------------------------------------------------------------------
+void ScriptExecutor::fadeIn()
+{
+  int mciOpacity = m_mciActor->GetProperty()->GetOpacity() * 100;
+  int brainOpacity = m_brainActor->GetProperty()->GetOpacity() * 100;
+
+  for(int i = 40; brainOpacity <= 100 && mciOpacity >= 0 && i <= 100; i+=2)
+  {
+    brainOpacity += 2;
+    mciOpacity -= 2;
+    m_mciActor->GetProperty()->SetOpacity(mciOpacity/100.);
+    m_brainActor->GetProperty()->SetOpacity(brainOpacity/100.);
+
     waitForFrameToRender();
   }
 
-  m_renderer->RemoveActor(surfaceActor);
+  m_mciActor->GetProperty()->SetOpacity(0);
+  m_brainActor->GetProperty()->SetOpacity(1);
+
+  waitForFrameToRender();
+}
+
+//--------------------------------------------------------------------
+void ScriptExecutor::fadeOut()
+{
+  int mciOpacity = m_mciActor->GetProperty()->GetOpacity() * 100;
+  int brainOpacity = m_brainActor->GetProperty()->GetOpacity() * 100;
+
+  for(int i = 0; brainOpacity >= 40 && mciOpacity <= 60; i+=2)
+  {
+    brainOpacity -= 2;
+    mciOpacity += 2;
+    m_mciActor->GetProperty()->SetOpacity(mciOpacity/100.);
+    m_brainActor->GetProperty()->SetOpacity(brainOpacity/100.);
+
+    waitForFrameToRender();
+  }
+
+  m_mciActor->GetProperty()->SetOpacity(0.6);
+  m_brainActor->GetProperty()->SetOpacity(0.4);
+
+  waitForFrameToRender();
 }
