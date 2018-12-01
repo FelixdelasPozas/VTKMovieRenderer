@@ -42,7 +42,7 @@ Main dialog allows the user to reposition the camera in the view before the rend
 
 | Language                     |files          |blank        |comment           |code  |
 |:-----------------------------|--------------:|------------:|-----------------:|-----:|
-| C++                          |   5           | 327         |   181            | 1228 |
-| C/C++ Header                 |   4           | 103         |   253            |  201 |
+| C++                          |   5           | 338         |   183            | 1279 |
+| C/C++ Header                 |   4           | 103         |   253            |  202 |
 | CMake                        |   1           |  17         |     3            |   58 |
-| **Total**                    | **10**        | **447**     | **437**          | **1487** |
+| **Total**                    | **10**        | **458**     | **439**          | **1539** |
