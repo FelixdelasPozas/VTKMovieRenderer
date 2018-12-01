@@ -83,6 +83,8 @@ vtkSmartPointer<vtkPolyData> imageToMesh(const vtkSmartPointer<vtkImageData> ima
   smoothFilter->SetInputConnection(cleanFilter->GetOutputPort());
   smoothFilter->SetNumberOfIterations(250);
   smoothFilter->SetRelaxationFactor(0.1);
+  smoothFilter->SetFeatureAngle(95);
+  smoothFilter->SetEdgeAngle(95);
   smoothFilter->FeatureEdgeSmoothingOn();
   smoothFilter->BoundarySmoothingOn();
   smoothFilter->Update();

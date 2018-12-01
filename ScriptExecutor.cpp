@@ -187,8 +187,8 @@ void ScriptExecutor::getResources(ResourceLoaderThread *loader)
   textActor->SetPosition(10, windowSize[1]-40);
 // 4k doesn't scale 2D actors, needs those modifications.
 //  textActor->SetPosition(100, 2160-140);
-//  textActor->GetTextProperty()->SetFontSize(88);
   textActor->GetTextProperty()->SetFontFamilyToArial();
+//  textActor->GetTextProperty()->SetFontSize(88);
   textActor->GetTextProperty()->SetFontSize(28);
   textActor->GetTextProperty()->SetColor(1.0, 1.0, 1.0);
 
@@ -247,7 +247,7 @@ void ScriptExecutor::reslice()
 
   // SCALAR BAR
   auto barLut = vtkSmartPointer<vtkLookupTable>::New();
-  barLut->SetTableRange(4.2, 6.2);
+  barLut->SetTableRange(4.7, 6.2);
   barLut->SetHueRange(0.0, 1.0);
   barLut->SetSaturationRange(1.0, 1.0);
   barLut->SetAlphaRange(1.0, 1.0);
@@ -323,14 +323,13 @@ void ScriptExecutor::reslice()
 
   auto MCILookupTable = vtkSmartPointer<vtkLookupTable>::New();
   MCILookupTable->Allocate();
-  MCILookupTable->SetTableRange(150, 255);
+  MCILookupTable->SetTableRange(0, 255);
   MCILookupTable->SetValueRange(1., 1.);
   MCILookupTable->SetHueRange(0.,1.);
   MCILookupTable->SetAlphaRange(1., 1.);
   MCILookupTable->SetSaturationRange(1.,1.);
-  //MCILookupTable->SetNumberOfColors(256);
+  MCILookupTable->SetNumberOfColors(256);
   MCILookupTable->SetRampToLinear();
-  MCILookupTable->SetNumberOfTableValues(255-150);
   MCILookupTable->Build();
 
   auto rgba = MCILookupTable->GetTableValue(0);

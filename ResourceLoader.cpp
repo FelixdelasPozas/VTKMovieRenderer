@@ -56,6 +56,14 @@
 #include <vtkDepthSortPolyData.h>
 #include <vtkXMLPolyDataWriter.h>
 #include <vtkXMLPolyDataReader.h>
+#include <vtkPoints.h>
+#include <vtkImageResize.h>
+#include <vtkImageInterpolator.h>
+
+#include <itkImage.h>
+#include <itkImageRegionIteratorWithIndex.h>
+#include <itkImageFileReader.h>
+#include <itkImageFileWriter.h>
 
 //--------------------------------------------------------------------
 void ResourceLoaderThread::run()
@@ -130,7 +138,17 @@ void ResourceLoaderThread::run()
       image->DeepCopy(reader->GetOutput());
     }
 
-    auto width = image->GetExtent()[1];
+    auto interpolator = vtkSmartPointer<vtkImageInterpolator>::New();
+    interpolator->SetInterpolationModeToCubic();
+
+    auto resizer = vtkSmartPointer<vtkImageResize>::New();
+    resizer->SetInputData(image);
+    resizer->SetInterpolator(interpolator);
+    resizer->SetOutputDimensions(image->GetDimensions()[0]*3, image->GetDimensions()[1]*3, 1);
+    resizer->Update();
+
+    auto width = resizer->GetOutput()->GetExtent()[1];
+    image->DeepCopy(resizer->GetOutput());
 
     auto imageMapper = vtkSmartPointer<vtkImageMapper>::New();
     imageMapper->SetInputData(image);
@@ -328,7 +346,7 @@ void ResourceLoaderThread::meshLoader()
   // resources filenames.
   auto currentDir = QCoreApplication::applicationDirPath() + "/resources/";
   auto data1      = currentDir + "new_avg-2.mhd";
-  auto data2      = currentDir + "ConvMCI-2.mhd";
+  auto data2      = currentDir + "filtered.mhd";
   auto mesh1      = currentDir + "meshBrain.vtp";
   auto mesh2      = currentDir + "meshMCI.vtp";
 
@@ -399,4 +417,49 @@ void ResourceLoaderThread::meshLoader()
   polydata->DeepCopy(meshReader->GetOutput());
 
   m_polyDatas << polydata;
+}
+
+//--------------------------------------------------------------------
+void ResourceLoaderThread::imagePreprocessing()
+{
+  auto currentDir = QCoreApplication::applicationDirPath() + "/resources/";
+  auto data1      = currentDir + "Conversion_to_MCI.nii";
+
+  using FloatType = itk::Image<float, 3>;
+  using ImageType = itk::Image<unsigned char, 3>;
+
+  auto reader = itk::ImageFileReader<FloatType>::New();
+  reader->SetFileName(data1.toStdString().c_str());
+  reader->Update();
+
+  auto image = reader->GetOutput();
+  auto it = itk::ImageRegionIteratorWithIndex<FloatType>(image, image->GetLargestPossibleRegion());
+  it.GoToBegin();
+
+  auto uImage = ImageType::New();
+  uImage->SetNumberOfComponentsPerPixel(1);
+  uImage->SetRegions(image->GetLargestPossibleRegion());
+  uImage->SetSpacing(image->GetSpacing());
+  uImage->SetOrigin(image->GetOrigin());
+  uImage->Allocate(true);
+  auto uit = itk::ImageRegionIteratorWithIndex<ImageType>(uImage, uImage->GetLargestPossibleRegion());
+  uit.GoToBegin();
+
+  while(!it.IsAtEnd())
+  {
+    auto value = it.Value();
+    value = (value < 4.7) ? 0. : (value - 4.6999);
+    // [I] min 0 max 6.17444 other 3.30694
+    // [I] min 0 max 1.47454 other 0.00100485
+    unsigned char uValue = (value * 255)/1.47454;
+    uit.Set(uValue);
+
+    ++it;
+    ++uit;
+  }
+
+  auto writer = itk::ImageFileWriter<ImageType>::New();
+  writer->SetFileName(QString{currentDir + "filtered.mhd"}.toStdString().c_str());
+  writer->SetInput(uImage);
+  writer->Write();
 }

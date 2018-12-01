@@ -589,7 +589,7 @@ void MovieRenderer::makeMovie()
     ffmpegProcess.start(command);
     ffmpegProcess.waitForStarted();
 
-    ffmpegProcess.waitForFinished();
+    ffmpegProcess.waitForFinished(-1);
     if(!ffmpegProcess.readAllStandardError().isEmpty())
     {
       qDebug() << ffmpegProcess.readAllStandardError();

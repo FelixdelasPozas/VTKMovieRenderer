@@ -120,6 +120,7 @@ class ResourceLoaderThread
     void volumeLoaderUCHAR();
     void volumeLoaderUSHORT();
     void meshLoader();
+    void imagePreprocessing();
 
     QList<vtkSmartPointer<vtkImageData>> m_images;    /** list of vtkImageData.                 */
     QList<vtkSmartPointer<vtkPolyData>>  m_polyDatas; /** list of mesh objects.                 */
