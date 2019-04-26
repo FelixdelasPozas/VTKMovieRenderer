@@ -19,7 +19,6 @@
 
 
 // Project
-#include <vtkCleanPolyData.h>
 #include "Utils.h"
 
 // VTK
@@ -29,13 +28,19 @@
 #include <vtkMarchingCubes.h>
 #include <vtkPolyDataNormals.h>
 #include <vtkSmoothPolyDataFilter.h>
+#include <vtkCleanPolyData.h>
+#include <vtkMetaImageWriter.h>
+#include <vtkXMLPolyDataWriter.h>
+#include <vtkPNGWriter.h>
 
 // Qt
 #include <QApplication>
 #include <QDir>
+#include <QDebug>
 
 // C++
 #include <cstring>
+#include <iostream>
 
 //--------------------------------------------------------------------
 bool blendPictures(const vtkSmartPointer<vtkImageData> first, const vtkSmartPointer<vtkImageData> second, const int steps, const QString filename)
@@ -71,6 +76,7 @@ vtkSmartPointer<vtkPolyData> imageToMesh(const vtkSmartPointer<vtkImageData> ima
   // Marching cubes, mesh smoothing.
   auto surface = vtkSmartPointer<vtkMarchingCubes>::New();
   surface->SetInputData(image);
+  surface->SetComputeNormals(true);
   surface->SetValue(0, value);
   surface->Update();
 
@@ -106,4 +112,82 @@ vtkSmartPointer<vtkPolyData> imageToMesh(const vtkSmartPointer<vtkImageData> ima
   data->DeepCopy(normalsGenerator->GetOutput());
 
   return data;
+}
+
+//--------------------------------------------------------------------
+bool saveImageToDisk(const vtkSmartPointer<vtkImageData>& image, const QString& filename)
+{
+  if(!image)
+  {
+    qDebug() << "saveImageToDisk - no image. Cant save" << filename;
+    return false;
+  }
+
+  std::ifstream file(filename.toStdString().c_str());
+  file.open(filename.toStdString(), std::ios_base::openmode::_S_in);
+  if(file.is_open())
+  {
+    qDebug() << "saveImageToDisk - already exists. Cant save" << filename;
+    file.close();
+    return false;
+  }
+
+  auto writer = vtkSmartPointer<vtkMetaImageWriter>::New();
+  writer->SetInputData(image);
+  writer->SetFileName(filename.toStdString().c_str());
+  writer->Write();
+
+  return true;
+
+}
+
+//--------------------------------------------------------------------
+bool saveMeshToDisk(const vtkSmartPointer<vtkPolyData>& mesh, const QString& filename)
+{
+  if(!mesh)
+  {
+    qDebug() << "saveMeshToDisk - no mesh. Cant save" << filename;
+    return false;
+  }
+
+  std::ifstream file(filename.toStdString().c_str());
+  file.open(filename.toStdString(), std::ios_base::openmode::_S_in);
+  if(file.is_open())
+  {
+    qDebug() << "saveMeshToDisk - already exists. Cant save" << filename;
+    file.close();
+    return false;
+  }
+
+  auto writer = vtkSmartPointer<vtkXMLPolyDataWriter>::New();
+  writer->SetInputData(mesh);
+  writer->SetFileName(filename.toStdString().c_str());
+  writer->Write();
+
+  return true;
+}
+
+//--------------------------------------------------------------------
+void savePNG(vtkImageData *image, const QString &filename)
+{
+  if(!image)
+  {
+    qDebug() << "savePNG - no image! Can't save" << filename;
+    return;
+  }
+
+  std::ifstream file(filename.toStdString().c_str());
+  file.open(filename.toStdString(), std::ios_base::openmode::_S_in);
+  if(file.is_open())
+  {
+    qDebug() << "savePNG - already exists! Can't save" << filename;
+    file.close();
+    return;
+  }
+
+  auto writer = vtkSmartPointer<vtkPNGWriter>::New();
+  writer->SetInputData(image);
+  writer->SetFileDimensionality(2);
+  writer->SetFileName(filename.toStdString().c_str());
+  writer->Write();
 }

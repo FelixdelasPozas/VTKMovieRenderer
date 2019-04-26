@@ -60,10 +60,12 @@
 #include <vtkImageResize.h>
 #include <vtkImageInterpolator.h>
 
+// ITK
 #include <itkImage.h>
 #include <itkImageRegionIteratorWithIndex.h>
 #include <itkImageFileReader.h>
 #include <itkImageFileWriter.h>
+#include <itkFlipImageFilter.h>
 
 //--------------------------------------------------------------------
 void ResourceLoaderThread::run()
@@ -75,6 +77,12 @@ void ResourceLoaderThread::run()
   auto logoaa     = currentDir + "aa.png";
 
   meshLoader();
+
+  if(m_abort)
+  {
+    freeResources();
+    return;
+  }
 
   // ACTORS REPOSITION (centers are in 0,0,0 for an easier rotation).
   // Values have been previously precomputed for the scene to rotate
@@ -105,6 +113,12 @@ void ResourceLoaderThread::run()
   {
     actor->SetOrigin(center);
     actor->SetPosition(position);
+  }
+
+  if(m_abort)
+  {
+    freeResources();
+    return;
   }
 
   // LOGOS LOADING & ACTOR CREATION
@@ -162,6 +176,12 @@ void ResourceLoaderThread::run()
     xPos += width;
 
     m_logos << imageActor;
+  }
+
+  if(m_abort)
+  {
+    freeResources();
+    return;
   }
 }
 
@@ -346,7 +366,7 @@ void ResourceLoaderThread::meshLoader()
   // resources filenames.
   auto currentDir = QCoreApplication::applicationDirPath() + "/resources/";
   auto data1      = currentDir + "new_avg-2.mhd";
-  auto data2      = currentDir + "filtered.mhd";
+  auto data2      = currentDir + "filtered2.mhd";
   auto mesh1      = currentDir + "meshBrain.vtp";
   auto mesh2      = currentDir + "meshMCI.vtp";
 
@@ -445,21 +465,49 @@ void ResourceLoaderThread::imagePreprocessing()
   auto uit = itk::ImageRegionIteratorWithIndex<ImageType>(uImage, uImage->GetLargestPossibleRegion());
   uit.GoToBegin();
 
+  auto adjustFor = [] (double value, const double limit)
+  {
+    value = (value < limit) ? 0. : (value - (limit * 0.99));
+    unsigned char uValue = (value * 255)/(6.17444-limit);
+
+    return uValue;
+  };
+
   while(!it.IsAtEnd())
   {
     auto value = it.Value();
-    value = (value < 4.7) ? 0. : (value - 4.6999);
-    // [I] min 0 max 6.17444 other 3.30694
-    // [I] min 0 max 1.47454 other 0.00100485
-    unsigned char uValue = (value * 255)/1.47454;
+    auto uValue = adjustFor(value, 4.67);
     uit.Set(uValue);
 
     ++it;
     ++uit;
   }
 
+  itk::FixedArray<bool, 3> flipAxes;
+  flipAxes[0] = true;
+  flipAxes[1] = false;
+  flipAxes[2] = false;
+
+  auto flipX = itk::FlipImageFilter<ImageType>::New();
+  flipX->SetFlipAxes(flipAxes);
+  flipX->SetNumberOfThreads(1);
+  flipX->SetInput(uImage);
+  flipX->ReleaseDataFlagOn();
+  flipX->Update();
+
   auto writer = itk::ImageFileWriter<ImageType>::New();
   writer->SetFileName(QString{currentDir + "filtered.mhd"}.toStdString().c_str());
-  writer->SetInput(uImage);
+  writer->SetInput(flipX->GetOutput());
   writer->Write();
+}
+
+//--------------------------------------------------------------------
+void ResourceLoaderThread::freeResources()
+{
+  m_actors.clear();
+  m_images.clear();
+  m_logos.clear();
+  m_planes.clear();
+  m_polyDatas.clear();
+  m_volumes.clear();
 }

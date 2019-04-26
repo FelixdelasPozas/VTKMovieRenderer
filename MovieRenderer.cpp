@@ -28,6 +28,7 @@
 #include <QObject>
 #include <QEvent>
 #include <QTimer>
+#include <QSettings>
 #include <QDebug>
 
 // VTK
@@ -39,13 +40,35 @@
 #include <vtkImageSincInterpolator.h>
 #include <vtkImageResize.h>
 #include <vtkPNGWriter.h>
-#include <QVTKWidget.h>
 #include <vtkAxesActor.h>
 #include <vtkOrientationMarkerWidget.h>
 
 // C++
 #include <chrono>
 #include <thread>
+
+const QString VIDEO_4K_ENABLED         = "Video 4k enabled";
+const QString VIDEO_HD_ENABLED         = "Video HD enabled";
+const QString VIDEO_SD_ENABLED         = "Video SD enabled";
+const QString POINT_SMOOTHING_ENABLE   = "Point smoothing enabled";
+const QString LINE_SMOOTHING_ENABLE    = "Line smoothing enabled";
+const QString POLYGON_SMOOTHING_ENABLE = "Polygon smoothing enabled";
+const QString SHADOWS_ENABLED          = "Shadows enabled";
+const QString MOTION_BLUR_ENABLED      = "Motion blur enabled";
+const QString MOTION_BLUR_FRAMES       = "Motion blur frames";
+const QString ANTIALIAS_ENABLED        = "Antialias enabled";
+const QString ANTIALIAS_FRAMES         = "Antialias frames";
+const QString AXES_SHOWN               = "Axes shown";
+const QString OUTPUT_DIR               = "Output directory";
+const QString FFMPEG_BINARY            = "FFMPEG binary";
+const QString CAMERA_X_POS             = "Camera x position";
+const QString CAMERA_Y_POS             = "Camera y position";
+const QString CAMERA_Z_POS             = "Camera z position";
+const QString CAMERA_FOCAL_X_POS       = "Camera focal point x position";
+const QString CAMERA_FOCAL_Y_POS       = "Camera focal point y position";
+const QString CAMERA_FOCAL_Z_POS       = "Camera focal point z position";
+const QString CAMERA_ZOOM              = "Camera zoom";
+const QString CAMERA_ROLL              = "Camera roll";
 
 //--------------------------------------------------------------------
 MovieRenderer::MovieRenderer()
@@ -55,17 +78,14 @@ MovieRenderer::MovieRenderer()
 {
   setupUi(this);
 
-  // just to avoid entering the same information over and over while testing, feel free to put your own or remove both lines.
-  m_directory->setText("D:\\Descargas\\Render");
-  m_ffmpegExe->setText("D:\\Program Files\\ffmpeg-20180424-d9706f7-win64-static\\bin\\ffmpeg.exe");
-
   connectSignals();
 
-  // See note below in updateRendererSettings. Shadows messes transparency.
-  m_shadows->setEnabled(false);
-
   setupVTKView();
+
+  restoreSettings();
+
   updateRendererSettings();
+
   m_render->setEnabled(false);
 
   showMaximized();
@@ -127,9 +147,13 @@ void MovieRenderer::stopRender()
 {
   statusBar()->showMessage(tr("Rendering cancelled."));
 
-  m_frameNum = 0;
   m_executor->abort();
+
   modifyUI(true);
+
+  QApplication::processEvents();
+
+  m_frameNum = 0;
 }
 
 //--------------------------------------------------------------------
@@ -138,6 +162,7 @@ void MovieRenderer::startRender()
   statusBar()->showMessage(tr("Start rendering frames."));
 
   m_frameNum = 0;
+
   modifyUI(false);
 
   updateRendererSettings();
@@ -150,8 +175,7 @@ void MovieRenderer::updateRendererSettings()
 {
   auto renderWindow = m_renderer->GetRenderWindow();
 
-  // Apparently enabling shadows disables opacity for mesh actors...
-  //  m_renderer->SetUseShadows(m_shadows->isChecked());
+  //m_renderer->SetUseShadows(m_shadows->isChecked());
 
   renderWindow->SetPointSmoothing(m_pointSmoothing->isChecked());
   renderWindow->SetLineSmoothing(m_lineSmoothing->isChecked());
@@ -168,11 +192,11 @@ void MovieRenderer::updateRendererSettings()
 
   if(m_antiAlias->isChecked())
   {
-    renderWindow->SetAAFrames(m_aliasFrames->value());
+    renderWindow->SetMultiSamples(m_aliasFrames->value());
   }
   else
   {
-    renderWindow->SetAAFrames(0);
+    renderWindow->SetMultiSamples(0);
   }
 }
 
@@ -188,6 +212,10 @@ void MovieRenderer::connectSignals()
   connect(m_resetCamera, SIGNAL(pressed()), this, SLOT(onCameraResetPressed()));
   connect(m_reloadResources, SIGNAL(pressed()), this, SLOT(onReloadPressed()));
   connect(m_axes, SIGNAL(stateChanged(int)), this, SLOT(onAxesValueChanged(int)));
+  connect(m_lineSmoothing, SIGNAL(stateChanged(int)), this, SLOT(updateRendererSettings()));
+  connect(m_pointSmoothing, SIGNAL(stateChanged(int)), this, SLOT(updateRendererSettings()));
+  connect(m_polygonSmoothing, SIGNAL(stateChanged(int)), this, SLOT(updateRendererSettings()));
+  connect(m_saveCamera, SIGNAL(pressed()), this, SLOT(saveCameraPosition()));
 }
 
 //--------------------------------------------------------------------
@@ -195,7 +223,7 @@ void MovieRenderer::onResourcesLoaded()
 {
   auto loader = qobject_cast<ResourceLoaderThread *>(sender());
 
-  if(loader)
+  if(loader && !loader->isAborted())
   {
     if(!loader->getError().isEmpty())
     {
@@ -218,16 +246,17 @@ void MovieRenderer::onResourcesLoaded()
   }
   else
   {
-    errorDialog(tr("Error loading resources."), tr("Invalid sender pointer."));
+    if(!loader)
+    {
+      errorDialog(tr("Error loading resources."), tr("Invalid sender pointer."));
+    }
+    else
+    {
+      errorDialog(tr("Loading aborted"), tr("Loading process was aborted."));
+    }
   }
 
   onCameraResetPressed();
-
-  m_renderer->GetActiveCamera()->SetFocalPoint(0,0,0);
-  m_renderer->GetActiveCamera()->SetPosition(4, 0, -3);
-  m_renderer->GetActiveCamera()->Roll(-90);
-  m_renderer->GetActiveCamera()->Zoom(2);
-  m_renderer->ResetCamera();
 
   m_render->setEnabled(true);
   m_resetCamera->setEnabled(true);
@@ -242,6 +271,7 @@ void MovieRenderer::setupVTKView()
   m_view->show();
   m_renderer = vtkSmartPointer<vtkRenderer>::New();
   m_renderer->LightFollowCameraOn();
+  m_renderer->SetUseFXAA(false);
   m_renderer->GetActiveCamera(); // creates default camera.
 
   auto interactorstyle = vtkSmartPointer<vtkInteractorStyleTrackballCamera>::New();
@@ -276,12 +306,16 @@ void MovieRenderer::setupVTKView()
 void MovieRenderer::onMotionBlurChanged(int value)
 {
   m_motionBlurFrames->setEnabled(m_motionBlur->isChecked());
+
+  updateRendererSettings();
 }
 
 //--------------------------------------------------------------------
 void MovieRenderer::onAntiAliasChanged(int int1)
 {
   m_aliasFrames->setEnabled(m_antiAlias->isChecked());
+
+  updateRendererSettings();
 }
 
 //--------------------------------------------------------------------
@@ -355,8 +389,8 @@ void MovieRenderer::onRenderSignaled()
 {
   if(m_executor->isFinished()) return;
 
+  m_view->update();
   auto renderWindow = m_view->GetRenderWindow();
-  renderWindow->Render();
 
   auto outputDir = QDir::toNativeSeparators(m_directory->text() + "/");
 
@@ -365,8 +399,8 @@ void MovieRenderer::onRenderSignaled()
     // Screenshot
     auto windowToImageFilter = vtkSmartPointer<vtkWindowToImageFilter>::New();
     windowToImageFilter->SetInput(renderWindow);
-    windowToImageFilter->SetFixBoundary(true);
     windowToImageFilter->SetMagnification(1);
+    windowToImageFilter->SetFixBoundary(true);
     windowToImageFilter->SetInputBufferTypeToRGBA();
     windowToImageFilter->Update();
 
@@ -409,7 +443,6 @@ void MovieRenderer::onRenderSignaled()
     // Screenshot
     auto windowToImageFilter = vtkSmartPointer<vtkWindowToImageFilter>::New();
     windowToImageFilter->SetInput(renderWindow);
-    windowToImageFilter->SetFixBoundary(true);
     windowToImageFilter->SetMagnification(3);
     windowToImageFilter->SetFixBoundary(true);
     windowToImageFilter->SetInputBufferTypeToRGBA();
@@ -466,12 +499,26 @@ void MovieRenderer::onReloadPressed()
 //--------------------------------------------------------------------
 void MovieRenderer::onCameraResetPressed()
 {
+  auto name = QApplication::applicationDirPath() + "/VTKMovieRenderer.ini";
+  QSettings settings(name, QSettings::IniFormat);
+
+  double cameraPos[3], focalPoint[3], zoom, roll;
+  cameraPos[0] = settings.value(CAMERA_X_POS, 0).toDouble();
+  cameraPos[1] = settings.value(CAMERA_Y_POS, 10).toDouble();
+  cameraPos[2] = settings.value(CAMERA_Z_POS, 10).toDouble();
+  focalPoint[0] = settings.value(CAMERA_FOCAL_X_POS, 0).toDouble();
+  focalPoint[1] = settings.value(CAMERA_FOCAL_Y_POS, 0).toDouble();
+  focalPoint[2] = settings.value(CAMERA_FOCAL_Z_POS, 0).toDouble();
+  zoom = settings.value(CAMERA_ZOOM, 1).toDouble();
+  roll = settings.value(CAMERA_ROLL, 0).toDouble();
+
   auto camera = m_renderer->GetActiveCamera();
 
-  camera->SetFocalPoint(0, 0, 0);
-  camera->SetPosition(0, 10, 10);
+  camera->SetFocalPoint(focalPoint[0], focalPoint[1], focalPoint[2]);
+  camera->SetPosition(cameraPos[0], cameraPos[1], cameraPos[2]);
+  camera->SetViewAngle(zoom);
+  camera->SetRoll(roll);
 
-  m_renderer->ResetCamera();
   m_renderer->GetRenderWindow()->Render();
 
   m_view->update();
@@ -492,37 +539,8 @@ bool MovieRenderer::eventFilter(QObject *object, QEvent *e)
   if(m_render->text() == "Stop")
   {
     // If rendering frames just swallow the event and do nothing to avoid interruption any camera animation.
+    e->accept();
     return true;
-  }
-
-  if(m_axesWidget->GetEnabled() && m_view == dynamic_cast<QVTKWidget *>(object))
-  {
-    if(e && e->type() == QEvent::MouseButtonPress)
-    {
-      auto me = static_cast<QMouseEvent*>(e);
-      if(me && me->button() == Qt::RightButton)
-      {
-        if(m_renderer)
-        {
-          double fp[3], pos[3];
-
-          // If we need to store a camera position just dump the information.
-          auto camera = m_renderer->GetActiveCamera();
-          camera->GetPosition(pos);
-          camera->GetFocalPoint(fp);
-          auto dist = camera->GetDistance();
-          auto roll = camera->GetRoll();
-
-          std::cout << "camera position ------" << std::endl;
-          std::cout << "position: " << pos[0] << "," << pos[1] << "," << pos[2] << std::endl;
-          std::cout << "focal point: " << fp[0] << "," << fp[1] << "," << fp[2] << std::endl;
-          std::cout << "distance: " << dist << std::endl;
-          std::cout << "roll: " << roll << std::endl;
-        }
-      }
-    }
-
-    return m_view->eventFilter(object, e);
   }
 
   return QMainWindow::eventFilter(object, e);
@@ -619,4 +637,93 @@ void MovieRenderer::onDataAvailable()
 
   auto data = object->readAllStandardError();
   qDebug() << QString().fromLocal8Bit(data);
+}
+
+//--------------------------------------------------------------------
+void MovieRenderer::saveSettings() const
+{
+  auto name = QApplication::applicationDirPath() + "/VTKMovieRenderer.ini";
+  QSettings settings(name, QSettings::IniFormat);
+  settings.setValue(VIDEO_4K_ENABLED, m_render4K->isChecked());
+  settings.setValue(VIDEO_HD_ENABLED, m_renderFull->isChecked());
+  settings.setValue(VIDEO_SD_ENABLED, m_renderHalf->isChecked());
+  settings.setValue(POINT_SMOOTHING_ENABLE, m_pointSmoothing->isChecked());
+  settings.setValue(LINE_SMOOTHING_ENABLE, m_lineSmoothing->isChecked());
+  settings.setValue(POLYGON_SMOOTHING_ENABLE, m_polygonSmoothing->isChecked());
+  settings.setValue(SHADOWS_ENABLED, m_shadows->isChecked());
+  settings.setValue(MOTION_BLUR_ENABLED, m_motionBlur->isChecked());
+  settings.setValue(MOTION_BLUR_FRAMES, m_motionBlurFrames->value());
+  settings.setValue(ANTIALIAS_ENABLED, m_antiAlias->isChecked());
+  settings.setValue(ANTIALIAS_FRAMES, m_aliasFrames->value());
+  settings.setValue(AXES_SHOWN, m_axes->isChecked());
+  settings.setValue(OUTPUT_DIR, m_directory->text());
+  settings.setValue(FFMPEG_BINARY, m_ffmpegExe->text());
+
+  settings.sync();
+}
+
+//--------------------------------------------------------------------
+void MovieRenderer::restoreSettings()
+{
+  auto name = QApplication::applicationDirPath() + "/VTKMovieRenderer.ini";
+  QSettings settings(name, QSettings::IniFormat);
+  m_render4K->setChecked(settings.value(VIDEO_4K_ENABLED, false).toBool());
+  m_renderFull->setChecked(settings.value(VIDEO_HD_ENABLED, true).toBool());
+  m_renderHalf->setChecked(settings.value(VIDEO_SD_ENABLED, false).toBool());
+  m_pointSmoothing->setChecked(settings.value(POINT_SMOOTHING_ENABLE, true).toBool());
+  m_lineSmoothing->setChecked(settings.value(LINE_SMOOTHING_ENABLE, true).toBool());
+  m_polygonSmoothing->setChecked(settings.value(POLYGON_SMOOTHING_ENABLE, true).toBool());
+  m_shadows->setChecked(settings.value(SHADOWS_ENABLED, true).toBool());
+  m_motionBlur->setChecked(settings.value(MOTION_BLUR_ENABLED, true).toBool());
+  m_motionBlurFrames->setValue(settings.value(MOTION_BLUR_FRAMES, 1).toInt());
+  m_antiAlias->setChecked(settings.value(ANTIALIAS_ENABLED, true).toBool());
+  m_aliasFrames->setValue(settings.value(ANTIALIAS_FRAMES, 5).toInt());
+  m_axes->setChecked(settings.value(AXES_SHOWN, false).toBool());
+  m_directory->setText(settings.value(OUTPUT_DIR, QCoreApplication::applicationDirPath()).toString());
+  m_ffmpegExe->setText(settings.value(FFMPEG_BINARY, QString()).toString());
+}
+
+//--------------------------------------------------------------------
+void MovieRenderer::closeEvent(QCloseEvent* event)
+{
+  saveSettings();
+
+  if(m_loader && m_loader->isRunning())
+  {
+    m_loader->abort();
+    m_loader->thread()->wait(10000);
+    m_loader = nullptr;
+  }
+
+  if(m_executor && m_executor->isRunning())
+  {
+    m_executor->abort();
+    m_executor->thread()->wait(10000);
+    m_executor = nullptr;
+  }
+}
+
+//--------------------------------------------------------------------
+void MovieRenderer::saveCameraPosition() const
+{
+  double cameraPos[3], focalPoint[3], zoom, roll;
+
+  auto camera = m_renderer->GetActiveCamera();
+  camera->GetPosition(cameraPos);
+  camera->GetFocalPoint(focalPoint);
+  zoom = camera->GetViewAngle();
+  roll = camera->GetRoll();
+
+  auto name = QApplication::applicationDirPath() + "/VTKMovieRenderer.ini";
+  QSettings settings(name, QSettings::IniFormat);
+  settings.setValue(CAMERA_X_POS, cameraPos[0]);
+  settings.setValue(CAMERA_Y_POS, cameraPos[1]);
+  settings.setValue(CAMERA_Z_POS, cameraPos[2]);
+  settings.setValue(CAMERA_FOCAL_X_POS, focalPoint[0]);
+  settings.setValue(CAMERA_FOCAL_Y_POS, focalPoint[1]);
+  settings.setValue(CAMERA_FOCAL_Z_POS, focalPoint[2]);
+  settings.setValue(CAMERA_ZOOM, zoom);
+  settings.setValue(CAMERA_ROLL, roll);
+
+  settings.sync();
 }

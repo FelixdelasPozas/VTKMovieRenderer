@@ -20,10 +20,10 @@
 // Project
 #include <ScriptExecutor.h>
 #include <ResourceLoader.h>
+#include "Utils.h"
 
 // Qt
 #include <QApplication>
-#include <QDebug>
 
 // VTK
 #include <vtkSphereSource.h>
@@ -71,6 +71,7 @@
 #include <vtkImageCanvasSource2D.h>
 #include <vtkTextActor.h>
 #include <vtkTextProperty.h>
+#include <vtkTexture.h>
 
 // C++
 #include <cstring> // memcpy
@@ -133,6 +134,21 @@ void ScriptExecutor::getResources(ResourceLoaderThread *loader)
     return;
   }
 
+  // MCI Mesh actor.
+  auto mapper1 = vtkSmartPointer<vtkPolyDataMapper>::New();
+  mapper1->SetInputData(m_mciMesh);
+  mapper1->SetScalarVisibility(false);
+  mapper1->Update();
+
+  m_mciActor = vtkSmartPointer<vtkActor>::New();
+  m_mciActor->GetProperty()->SetColor(1.,0.,0.);
+  m_mciActor->GetProperty()->SetInterpolationToPhong();
+  m_mciActor->GetProperty()->SetBackfaceCulling(true);
+  m_mciActor->GetProperty()->SetOpacity(0.6);
+  m_mciActor->SetMapper(mapper1);
+
+  m_renderer->AddActor(m_mciActor);
+
   // Define a clipping plane
   m_plane = vtkSmartPointer<vtkPlane>::New();
   m_plane->SetNormal(0., -1., 0.);
@@ -146,14 +162,14 @@ void ScriptExecutor::getResources(ResourceLoaderThread *loader)
   clipper->SetInputData(m_brainMesh);
   clipper->SetClipFunction(m_plane);
 
-  //Create a mapper and actor
-  auto mapper = vtkSmartPointer<vtkPolyDataMapper>::New();
-  mapper->ReleaseDataFlagOff();
-  mapper->SetInputConnection(clipper->GetOutputPort());
-  mapper->SetScalarVisibility(false);
+  // Brain mesh actor.
+  auto mapper2 = vtkSmartPointer<vtkPolyDataMapper>::New();
+  mapper2->ReleaseDataFlagOff();
+  mapper2->SetInputConnection(clipper->GetOutputPort());
+  mapper2->SetScalarVisibility(false);
 
   m_brainActor = vtkSmartPointer<vtkActor>::New();
-  m_brainActor->SetMapper(mapper);
+  m_brainActor->SetMapper(mapper2);
   m_brainActor->GetProperty()->SetColor(0.3, 0.3, 0.3);
   m_brainActor->GetProperty()->SetInterpolationToPhong();
   m_brainActor->GetProperty()->SetOpacity(0.4);
@@ -161,19 +177,6 @@ void ScriptExecutor::getResources(ResourceLoaderThread *loader)
   m_brainActor->Modified();
 
   m_renderer->AddActor(m_brainActor);
-
-  mapper = vtkSmartPointer<vtkPolyDataMapper>::New();
-  mapper->SetInputData(m_mciMesh);
-  mapper->SetScalarVisibility(false);
-  mapper->Update();
-
-  m_mciActor = vtkSmartPointer<vtkActor>::New();
-  m_mciActor->GetProperty()->SetColor(1.,0.,0.);
-  m_mciActor->GetProperty()->SetBackfaceCulling(true);
-  m_mciActor->GetProperty()->SetOpacity(0.6);
-  m_mciActor->SetMapper(mapper);
-
-  m_renderer->AddActor(m_mciActor);
 
   for(auto actor: loader->logos())
   {
@@ -184,12 +187,12 @@ void ScriptExecutor::getResources(ResourceLoaderThread *loader)
 
   auto textActor = vtkSmartPointer<vtkTextActor>::New();
   textActor->SetInput("Predictor of impending MCI");
-  textActor->SetPosition(10, windowSize[1]-40);
+//  textActor->SetPosition(10, windowSize[1]-40);
 // 4k doesn't scale 2D actors, needs those modifications.
-//  textActor->SetPosition(100, 2160-140);
+  textActor->SetPosition(100, 2160-140);
   textActor->GetTextProperty()->SetFontFamilyToArial();
-//  textActor->GetTextProperty()->SetFontSize(88);
-  textActor->GetTextProperty()->SetFontSize(28);
+  textActor->GetTextProperty()->SetFontSize(88);
+//  textActor->GetTextProperty()->SetFontSize(28);
   textActor->GetTextProperty()->SetColor(1.0, 1.0, 1.0);
 
   m_renderer->AddActor2D(textActor);
@@ -257,21 +260,23 @@ void ScriptExecutor::reslice()
   auto scalarBar = vtkSmartPointer<vtkScalarBarActor>::New();
   scalarBar->SetLookupTable(barLut);
   scalarBar->SetTitle("t-values");
-  scalarBar->SetTitleRatio(0.8);
+  scalarBar->SetTitleRatio(0.9);
+  scalarBar->GetTitleTextProperty()->SetFontFamilyToArial();
+  scalarBar->GetTitleTextProperty()->SetFontSize(10);
   scalarBar->GetLabelTextProperty()->SetFontFamilyToArial();
   scalarBar->GetLabelTextProperty()->SetColor(1.0, 1.0, 1.0);
   scalarBar->SetNumberOfLabels(4);
 // 4K doesn't scale 2D actors, needs those modifications.
-//  scalarBar->GetLabelTextProperty()->SetFontSize(58);
-//  scalarBar->SetMaximumHeightInPixels(1200);
-//  scalarBar->SetMaximumWidthInPixels(140);
-  scalarBar->SetMaximumHeightInPixels(400);
-  scalarBar->SetMaximumWidthInPixels(50);
+  scalarBar->GetLabelTextProperty()->SetFontSize(58);
+  scalarBar->SetMaximumHeightInPixels(1200);
+  scalarBar->SetMaximumWidthInPixels(140);
+//  scalarBar->SetMaximumHeightInPixels(400);
+//  scalarBar->SetMaximumWidthInPixels(60);
   scalarBar->SetAnnotationTextScaling(true);
 
   auto windowSize = m_renderer->GetRenderWindow()->GetSize();
-  scalarBar->SetDisplayPosition(windowSize[0]-100, windowSize[1]/2 - 200);
-//  scalarBar->SetDisplayPosition(3840-275, 480);
+//  scalarBar->SetDisplayPosition(windowSize[0]-100, windowSize[1]/2 - 200);
+  scalarBar->SetDisplayPosition(3840-275, 480);
   scalarBar->Modified();
 
   m_renderer->AddActor(scalarBar);
@@ -310,7 +315,6 @@ void ScriptExecutor::reslice()
   resliceMapper->SetNumberOfThreads(1);
   resliceMapper->SetOutputFormatToRGBA();
   resliceMapper->SetInputConnection(reslice->GetOutputPort());
-  resliceMapper->SetUpdateExtentToWholeExtent();
 
   // other data: MCI
   auto resliceMCI = vtkSmartPointer<vtkImageReslice>::New();
@@ -341,7 +345,6 @@ void ScriptExecutor::reslice()
   resliceMapperMCI->SetNumberOfThreads(1);
   resliceMapperMCI->SetOutputFormatToRGBA();
   resliceMapperMCI->SetInputConnection(resliceMCI->GetOutputPort());
-  resliceMapperMCI->SetUpdateExtentToWholeExtent();
 
   auto blend = vtkSmartPointer<vtkImageBlend>::New();
   blend->AddInputData(resliceMapper->GetOutput());
@@ -349,11 +352,16 @@ void ScriptExecutor::reslice()
   blend->SetOpacity(0, 0.7);
   blend->SetOpacity(1, 0.3);
   blend->SetBlendModeToNormal();
+  blend->SetNumberOfThreads(1);
+  blend->DebugOn();
+  blend->GlobalWarningDisplayOn();
 
   // texture of the slice actor.
   auto texture = vtkSmartPointer<vtkTexture>::New();
   texture->SetInputConnection(blend->GetOutputPort());
   texture->InterpolateOn();
+  texture->DebugOn();
+  texture->GlobalWarningDisplayOn();
 
   auto plane = vtkPlane::New();
   plane->SetOrigin(0, 108.8,0);
@@ -385,6 +393,10 @@ void ScriptExecutor::reslice()
 
   auto length = 181.6; // the same for length in X and Z axis.
 
+  const QString brainSlice = "D:/Descargas/Render/slices/%1-brainSlice.png";
+  const QString mciSlice   = "D:/Descargas/Render/slices/%1-mciSlice.png";
+  const QString blendSlice = "D:/Descargas/Render/slices/%1-blendSlice.png";
+
   while(reslicePoint > finalPoint)
   {
     matrix->SetElement(1, 3, reslicePoint + 108.8); // images have not been translated after loading.
@@ -394,32 +406,30 @@ void ScriptExecutor::reslice()
     resliceMapperMCI->Update();
     blend->Update();
 
-    texture->Update();
-
     plane->SetOrigin(0, reslicePoint, 0.);
     plane->Modified();
+
+    cutter->Update();
 
     triangulator->Update();
 
     auto data = triangulator->GetOutput();
     auto array = vtkSmartPointer<vtkFloatArray>::New();
-    array->SetNumberOfComponents(3);
+    array->SetNumberOfComponents(2);
     array->SetNumberOfTuples(data->GetNumberOfPoints());
     array->SetName("TextureCoordinates");
     array->Allocate(data->GetNumberOfPoints());
 
     for(int i = 0; i < data->GetNumberOfPoints(); ++i)
     {
-      double coords[3], tcoords[3];
+      double coords[3];
       data->GetPoint(i, coords);
-      tcoords[0] = (coords[0]+90.8)/length;
-      tcoords[1] = (coords[2]+90.8)/length;
-      tcoords[2] = 0;
-
-      array->SetTuple(i, tcoords);
+      array->SetTuple2(i, (coords[0]+90.8)/length, (coords[2]+90.8)/length);
     }
 
     triangulator->GetOutput()->GetPointData()->SetTCoords(array);
+
+    texture->Update();
 
     cutterMapper->SetInputData(triangulator->GetOutput());
     cutterMapper->Update();
@@ -444,8 +454,6 @@ void ScriptExecutor::reslice()
     resliceMapperMCI->Update();
     blend->Update();
 
-    texture->Update();
-
     plane->SetOrigin(0, reslicePoint, 0.);
     plane->Modified();
 
@@ -453,23 +461,21 @@ void ScriptExecutor::reslice()
 
     auto data = triangulator->GetOutput();
     auto array = vtkSmartPointer<vtkFloatArray>::New();
-    array->SetNumberOfComponents(3);
+    array->SetNumberOfComponents(2);
     array->SetNumberOfTuples(data->GetNumberOfPoints());
     array->SetName("TextureCoordinates");
     array->Allocate(data->GetNumberOfPoints());
 
     for(int i = 0; i < data->GetNumberOfPoints(); ++i)
     {
-      double coords[3], tcoords[3];
+      double coords[3];
       data->GetPoint(i, coords);
-      tcoords[0] = (coords[0]+90.8)/length;
-      tcoords[1] = (coords[2]+90.8)/length;
-      tcoords[2] = 0;
-
-      array->SetTuple(i, tcoords);
+      array->SetTuple2(i, (coords[0]+90.8)/length, (coords[2]+90.8)/length);
     }
 
     triangulator->GetOutput()->GetPointData()->SetTCoords(array);
+
+    texture->Update();
 
     cutterMapper->SetInputData(triangulator->GetOutput());
     cutterMapper->Update();
@@ -497,7 +503,11 @@ void ScriptExecutor::fadeIn()
     brainOpacity += 2;
     mciOpacity -= 2;
     m_mciActor->GetProperty()->SetOpacity(mciOpacity/100.);
+    m_mciActor->GetProperty()->Modified();
+    m_mciActor->Modified();
     m_brainActor->GetProperty()->SetOpacity(brainOpacity/100.);
+    m_brainActor->GetProperty()->Modified();
+    m_brainActor->Modified();
 
     waitForFrameToRender();
   }
@@ -519,7 +529,11 @@ void ScriptExecutor::fadeOut()
     brainOpacity -= 2;
     mciOpacity += 2;
     m_mciActor->GetProperty()->SetOpacity(mciOpacity/100.);
+    m_mciActor->GetProperty()->Modified();
+    m_mciActor->Modified();
     m_brainActor->GetProperty()->SetOpacity(brainOpacity/100.);
+    m_brainActor->GetProperty()->Modified();
+    m_brainActor->Modified();
 
     waitForFrameToRender();
   }

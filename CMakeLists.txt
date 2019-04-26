@@ -7,7 +7,7 @@ endif()
 project (VTKMovieRenderer)
 
 add_definitions(
-  -std=c++11
+  -std=c++14
   -fpermissive)
   
 if(DEFINED MINGW)
@@ -16,8 +16,14 @@ else(DEFINED MINGW)
 	add_definitions(-rdynamic)
 endif(DEFINED MINGW)
 
-find_package(Qt4 REQUIRED)
-include(${QT_USE_FILE})
+# Instruct CMake to run moc automatically when needed.
+set(CMAKE_AUTOMOC ON)
+
+# Find the QtWidgets library
+find_package(Qt5 COMPONENTS Widgets Multimedia)
+
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${Qt5Widgets_EXECUTABLE_COMPILE_FLAGS}")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${Qt5Multimedia_EXECUTABLE_COMPILE_FLAGS}")
 
 find_package (VTK REQUIRED NO_MODULE)
 include (${VTK_USE_FILE})
@@ -35,18 +41,11 @@ INCLUDE_DIRECTORIES(
   ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-qt4_add_resources(RCC_FILES
+qt5_add_resources(RCC_FILES
   rsc/resources.qrc
   )
 
-# Create header's MOC files
-qt4_wrap_cpp (MOC_FILES
-  MovieRenderer.h
-  ResourceLoader.h
-  ScriptExecutor.h
-  )
-
-qt4_wrap_ui (UI_FILES
+qt5_wrap_ui (UI_FILES
   MovieRenderer.ui
   )
   
@@ -58,9 +57,10 @@ set (SOURCE_FILES
   Utils.cpp
   )
 
-
 #Set any libraries that your project depends on.
 SET(Libraries
+  Qt5::Widgets
+  Qt5::Multimedia
   ${ITK_LIBRARIES}
   ${VTK_LIBRARIES}
   ${QT_LIBRARIES}

@@ -31,11 +31,11 @@
 #include <iostream>
 
 //-----------------------------------------------------------------
-void myMessageOutput(QtMsgType type, const char *text)
+void myMessageOutput(QtMsgType type, const QMessageLogContext &context, const QString &msg)
 {
   const char symbols[] = { 'I', 'E', '!', 'X' };
 //  QString output = QString("[%1] %2 (%3:%4 -> %5)").arg( symbols[type] ).arg( msg ).arg(context.file).arg(context.line).arg(context.function);
-  QString output = QString("[%1] %2").arg(symbols[type]).arg(QString(text));
+  QString output = QString("[%1] %2").arg(symbols[type]).arg(msg);
   std::cerr << output.toStdString() << std::endl;
   if (type == QtFatalMsg) abort();
 }
@@ -43,7 +43,7 @@ void myMessageOutput(QtMsgType type, const char *text)
 //-----------------------------------------------------------------
 int main(int argc, char *argv[])
 {
-  qInstallMsgHandler(myMessageOutput);
+  qInstallMessageHandler(myMessageOutput);
 
   QApplication app(argc, argv);
 

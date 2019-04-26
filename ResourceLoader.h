@@ -50,6 +50,7 @@ class ResourceLoaderThread
      *
      */
     explicit ResourceLoaderThread(QObject *parent = nullptr)
+    : m_abort{false}
     {}
 
     /** \brief ResourceLoaderThread class virtual destructor.
@@ -100,6 +101,15 @@ class ResourceLoaderThread
     const QString getError() const
     { return m_error; }
 
+    /** \brief Aborts the loading and frees resources.
+     *
+     */
+    void abort()
+    { m_abort = true; }
+
+    const bool isAborted() const
+    { return m_abort; }
+
   protected:
     virtual void run() override;
 
@@ -107,6 +117,11 @@ class ResourceLoaderThread
     void finishedLoading();
 
   private:
+    /** \brief Frees allocated resources.
+     *
+     */
+    void freeResources();
+
     /** \brief Modifies the error string.
      * \param[in] message error message.
      *
@@ -130,6 +145,7 @@ class ResourceLoaderThread
     QList<vtkSmartPointer<vtkPlane>>     m_planes;    /** list of planes.                       */
 
     QString                              m_error;     /** error message or empty if successful. */
+    bool                                 m_abort;     /** true if aborted, false otherwise.     */
 
 };
 

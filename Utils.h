@@ -28,6 +28,9 @@
 // Qt
 #include <QString>
 
+// C++
+#include <exception>
+
 class vtkPolyData;
 
 /** \brief Helper method to blend two pictures of the same size producing 'steps' intermediate pictures. Returns
@@ -75,4 +78,27 @@ template<typename T> void minmax(const typename T::Pointer image)
  */
 vtkSmartPointer<vtkPolyData> imageToMesh(const vtkSmartPointer<vtkImageData> image, const unsigned char value);
 
+/** \brief Helper to save an image to disk. Returns false if file exists or no valid image is given, returns true otherwise.
+ * \param[in] image VTK image smartpointer.
+ * \param[in] filename Name of file on disk.
+ *
+ */
+bool saveImageToDisk(const vtkSmartPointer<vtkImageData> &image, const QString &filename);
+
+/** \brief Helper to save a mesh to disk. Returns false if file exists or no valid mesh is given, returns true otherwise.
+ * \param[in] mesh VTK mesh smartpointer.
+ * \param[in] filename Name of file on disk.
+ *
+ */
+bool saveMeshToDisk(const vtkSmartPointer<vtkPolyData> &mesh, const QString &filename);
+
+/** \brief Helper to save a 2D image to disk. Does nothing if the input image is 3D.
+ * \param[in] image Image to save.
+ * \param[in] filename Image filename on disk.
+ *
+ */
+void savePNG(vtkImageData *image, const QString &filename);
+
+
 #endif // UTILS_H_
+

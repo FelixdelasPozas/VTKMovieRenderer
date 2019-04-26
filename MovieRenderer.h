@@ -25,8 +25,8 @@
 #include "ResourceLoader.h"
 
 // Qt
-#include <QMainWindow>
 #include "ui_MovieRenderer.h"
+#include <QMainWindow>
 #include <QProcess>
 
 // VTK
@@ -66,6 +66,7 @@ class MovieRenderer
 
   protected:
     virtual bool eventFilter(QObject *, QEvent *);
+    virtual void closeEvent(QCloseEvent *event);
 
   private slots:
     /** \brief Starts/Stops the script execution.
@@ -138,12 +139,17 @@ class MovieRenderer
      */
     void onProcessFinished(int exitCode, QProcess::ExitStatus exitStatus);
 
-  private:
     /** \brief Updates the vtk render window settings with the settings of the UI.
      *
      */
     void updateRendererSettings();
 
+    /** \brief Saves the camera position to the ini file.
+     *
+     */
+    void saveCameraPosition() const;
+
+  private:
     /** \brief Runs the script executor and disables part of the UI.
      *
      */
@@ -186,6 +192,16 @@ class MovieRenderer
      *
      */
     void errorDialog(const QString &title, const QString& message);
+
+    /** \brief Saves the current settings to a ini file in the same directory as the executable.
+     *
+     */
+    void saveSettings() const;
+
+    /** \brief Restores the application settings from an ini file in the application path.
+     *
+     */
+    void restoreSettings();
 
     // view, size is 1280x720
     vtkSmartPointer<vtkRenderer>                m_renderer;   /** vtk main renderer.         */
