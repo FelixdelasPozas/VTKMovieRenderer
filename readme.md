@@ -11,8 +11,6 @@ VTKMovieRenderer
 # Description
 Small helper application to generate videos using the VTK and ITK libraries. All the scripting and animation is done in C++, so the application must be compiled every time the scene changes. 
 
-Uses the Qt 4 library because it's included in another project that depends on it, but as a standalone application it could be moved to Qt 5 without problems. 
-
 # Compilation requirements
 ## To build the tool:
 * cross-platform build system: [CMake](http://www.cmake.org/cmake/resources/software.html).
