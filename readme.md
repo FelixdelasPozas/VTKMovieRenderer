@@ -18,7 +18,7 @@ Small helper application to generate videos using the VTK and ITK libraries. All
 
 ## External dependencies
 The following libraries are required:
-* [Qt 4 opensource framework](http://www.qt.io/).
+* [Qt 5 opensource framework](http://www.qt.io/).
 * [ITK](https://itk.org/) - Insight Segmentation and Registration Toolkit.
 * [VTK](http://www.vtk.org/) - The Visualization Toolkit.
 
